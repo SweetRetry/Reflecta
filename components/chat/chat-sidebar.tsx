@@ -2,6 +2,18 @@
 
 import { Terminal, Sparkles, Plus, MessageSquare } from "lucide-react";
 import { Loader } from "@/components/ai-elements/loader";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
 import { ChatSession } from "./types";
 import { formatRelativeTime } from "./utils";
 
@@ -21,8 +33,8 @@ export function ChatSidebar({
   onSelectSession,
 }: ChatSidebarProps) {
   return (
-    <aside className="w-64 flex flex-col border-r border-border bg-card/50 p-2">
-      <div className="p-2 mb-2">
+    <Sidebar>
+      <SidebarHeader>
         <div className="flex items-center gap-3">
           <div className="relative">
             <Terminal className="w-5 h-5" />
@@ -35,54 +47,61 @@ export function ChatSidebar({
             </p>
           </div>
         </div>
-      </div>
+      </SidebarHeader>
 
-      <button
-        onClick={onNewChat}
-        className="flex items-center gap-2 w-full p-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-        New Chat
-      </button>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <Button
+              onClick={onNewChat}
+              className="w-full justify-start"
+              size="sm"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Chat
+            </Button>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-      <div className="flex-1 mt-4 overflow-y-auto">
-        {sessionsLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader size={24} />
-          </div>
-        ) : (
-          <ul className="space-y-1">
-            {sessions.map((session) => (
-              <li key={session.sessionId}>
-                <button
-                  onClick={() => onSelectSession(session.sessionId)}
-                  className={`w-full text-left p-2 rounded-md text-sm transition-colors flex items-start gap-2 ${
-                    currentSessionId === session.sessionId
-                      ? "bg-muted"
-                      : "hover:bg-muted/50"
-                  }`}
-                >
-                  <MessageSquare className="w-4 h-4 mt-0.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate font-medium">
-                      {session.title || "New Chat"}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                      <span>{formatRelativeTime(session.lastMessageTimestamp)}</span>
-                      {session.messageCount !== undefined && (
-                        <>
-                          <span>•</span>
-                          <span>{session.messageCount} msg{session.messageCount !== 1 ? 's' : ''}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </aside>
+        <SidebarGroup>
+          <SidebarGroupLabel>Chats</SidebarGroupLabel>
+          <SidebarGroupContent>
+            {sessionsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader size={24} />
+              </div>
+            ) : (
+              <SidebarMenu>
+                {sessions.map((session) => (
+                  <SidebarMenuItem key={session.sessionId}>
+                    <SidebarMenuButton
+                      onClick={() => onSelectSession(session.sessionId)}
+                      isActive={currentSessionId === session.sessionId}
+                      size="lg"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <div className="flex-1 min-w-0 text-left">
+                        <p className="text-sm truncate font-medium">
+                          {session.title || "New Chat"}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                          <span>{formatRelativeTime(session.lastMessageTimestamp)}</span>
+                          {session.messageCount !== undefined && (
+                            <>
+                              <span>•</span>
+                              <span>{session.messageCount} msg{session.messageCount !== 1 ? 's' : ''}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            )}
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+    </Sidebar>
   );
 }

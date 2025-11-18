@@ -1,25 +1,32 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { nanoid } from "nanoid";
 import {
-  ChatSidebar,
-  ChatHeader,
-  ChatMessages,
+  SidebarProvider,
+  SidebarInset,
+} from "@/components/ui/sidebar";
+import {
+  ChatSidebar, ChatMessages,
   ChatInput,
   type ChatMessage,
-  type ChatSession,
+  type ChatSession
 } from "@/components/chat";
 
 export default function ChatPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Get sessionId from URL query params
+  const sessionId = searchParams.get("sessionId");
 
   // Refresh sessions function
   const refreshSessions = async () => {
@@ -37,6 +44,31 @@ export default function ChatPage() {
     }
   };
 
+  // Update URL when sessionId changes
+  const updateSessionIdInUrl = (newSessionId: string | null) => {
+    if (newSessionId) {
+      router.push(`?sessionId=${newSessionId}`, { scroll: false });
+    } else {
+      router.push("/", { scroll: false });
+    }
+  };
+
+  const handleNewChat = () => {
+    const newSessionId = nanoid();
+    updateSessionIdInUrl(newSessionId);
+    localStorage.setItem("chat_session_id", newSessionId);
+    // Optimistically add new session to top of list
+    setSessions((prev) => [
+      {
+        sessionId: newSessionId,
+        title: null,
+        lastMessageTimestamp: Date.now(),
+        messageCount: 0,
+      },
+      ...prev,
+    ]);
+  };
+
   // Fetch sessions on mount
   useEffect(() => {
     const fetchSessions = async () => {
@@ -47,13 +79,18 @@ export default function ChatPage() {
           const data = await response.json();
           setSessions(data.sessions || []);
 
-          // Initialize sessionId after fetching sessions
+          // Initialize sessionId from URL or fallback to stored/default
           if (!sessionId) {
             const storedSessionId = localStorage.getItem("chat_session_id");
-            if (storedSessionId && data.sessions.some((s: ChatSession) => s.sessionId === storedSessionId)) {
-              setSessionId(storedSessionId);
+            if (
+              storedSessionId &&
+              data.sessions.some(
+                (s: ChatSession) => s.sessionId === storedSessionId
+              )
+            ) {
+              updateSessionIdInUrl(storedSessionId);
             } else if (data.sessions.length > 0) {
-              setSessionId(data.sessions[0].sessionId);
+              updateSessionIdInUrl(data.sessions[0].sessionId);
             } else {
               handleNewChat();
             }
@@ -66,7 +103,7 @@ export default function ChatPage() {
       }
     };
     fetchSessions();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load chat history when sessionId changes
@@ -112,24 +149,11 @@ export default function ChatPage() {
     }
   }, [messages, streamingContent]);
 
-  const handleNewChat = () => {
-    const newSessionId = nanoid();
-    setSessionId(newSessionId);
-    localStorage.setItem("chat_session_id", newSessionId);
-    // Optimistically add new session to top of list
-    setSessions(prev => [{
-      sessionId: newSessionId,
-      title: null,
-      lastMessageTimestamp: Date.now(),
-      messageCount: 0
-    }, ...prev]);
-  };
-
   const handleSelectSession = (selectedSessionId: string) => {
-    setSessionId(selectedSessionId);
+    updateSessionIdInUrl(selectedSessionId);
     localStorage.setItem("chat_session_id", selectedSessionId);
   };
-  
+
   const sendMessage = async (messageData: { text: string }) => {
     const userInput = messageData.text;
     if (!userInput.trim() || isLoading) return;
@@ -176,7 +200,7 @@ export default function ChatPage() {
 
           // Split by double newline (SSE event separator)
           const events = buffer.split("\n\n");
-          
+
           // Keep the last incomplete event in buffer
           buffer = events.pop() || "";
 
@@ -188,7 +212,7 @@ export default function ChatPage() {
             for (const line of lines) {
               if (line.startsWith("data: ")) {
                 const data = line.slice(6).trim();
-                
+
                 // Handle completion marker
                 if (data === "[DONE]") {
                   setMessages((prev) => [
@@ -202,16 +226,18 @@ export default function ChatPage() {
                   setStreamingContent("");
 
                   // Optimistically update current session in sidebar
-                  setSessions(prev => prev.map(s =>
-                    s.sessionId === sessionId
-                      ? {
-                          ...s,
-                          lastMessageTimestamp: Date.now(),
-                          messageCount: (s.messageCount || 0) + 2, // user + assistant
-                          title: s.title || userInput.substring(0, 100)
-                        }
-                      : s
-                  ));
+                  setSessions((prev) =>
+                    prev.map((s) =>
+                      s.sessionId === sessionId
+                        ? {
+                            ...s,
+                            lastMessageTimestamp: Date.now(),
+                            messageCount: (s.messageCount || 0) + 2, // user + assistant
+                            title: s.title || userInput.substring(0, 100),
+                          }
+                        : s
+                    )
+                  );
 
                   // Refresh sessions to get accurate data from backend
                   refreshSessions();
@@ -230,7 +256,10 @@ export default function ChatPage() {
                     throw new Error(parsed.error);
                   }
                 } catch (e) {
-                  if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+                  if (
+                    e instanceof Error &&
+                    e.message !== "Unexpected end of JSON input"
+                  ) {
                     console.error("Parse error:", e, "Raw data:", data);
                   }
                 }
@@ -255,7 +284,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
+    <SidebarProvider>
       <ChatSidebar
         sessions={sessions}
         sessionsLoading={sessionsLoading}
@@ -264,19 +293,15 @@ export default function ChatPage() {
         onSelectSession={handleSelectSession}
       />
 
-      <main className="flex-1 flex flex-col">
-        <ChatHeader sessionId={sessionId} />
+      <SidebarInset className="flex flex-col p-6">
+        <ChatMessages
+          messages={messages}
+          isLoading={isLoading}
+          streamingContent={streamingContent}
+        />
 
-        <div className="flex-1 container mx-auto px-6 flex flex-col max-w-4xl">
-          <ChatMessages
-            messages={messages}
-            isLoading={isLoading}
-            streamingContent={streamingContent}
-          />
-
-          <ChatInput isLoading={isLoading} onSubmit={sendMessage} />
-        </div>
-      </main>
-    </div>
+        <ChatInput isLoading={isLoading} onSubmit={sendMessage} />
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
