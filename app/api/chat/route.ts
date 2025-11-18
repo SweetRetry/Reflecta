@@ -1,6 +1,18 @@
 /**
- * Optimized Chat API Route with comprehensive error handling,
- * rate limiting, monitoring, and production-ready features
+ * Chat API Route - Production-Ready GPT-like Chatbot with Memory
+ *
+ * Features:
+ * - Streaming responses with Server-Sent Events (SSE)
+ * - Long-term memory with RAG (Retrieval-Augmented Generation)
+ * - Reflective memory extraction using LangGraph
+ * - Smart token management and context window optimization
+ * - Rate limiting and request metrics
+ * - Comprehensive error handling
+ *
+ * Endpoints:
+ * - POST /api/chat: Send a message and get streaming response
+ * - GET /api/chat?sessionId={id}: Get chat history
+ * - GET /api/chat?listSessions=true: List all sessions
  */
 
 import { ChatAnthropic } from "@langchain/anthropic";
@@ -10,7 +22,7 @@ import { chatConfig } from "@/lib/chat-config";
 import { ChatValidator } from "@/lib/chat-validator";
 import { getRateLimiter, RateLimiter } from "@/lib/rate-limiter";
 import { MetricsCollector } from "@/lib/chat-metrics";
-import { ChatRequest, StreamChunk } from "@/lib/chat-types";
+import { ChatRequest, StreamChunk, ChatHistoryMessage, SessionSummary } from "@/lib/chat-types";
 import {
   buildMessagesWithMemory,
   processMemoryInBackground,
@@ -298,7 +310,12 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * GET handler to retrieve chat history or API statistics
+ * GET handler to retrieve chat history, sessions list, or API statistics
+ *
+ * Query parameters:
+ * - ?listSessions=true: Get all recent sessions
+ * - ?sessionId={id}: Get chat history for a specific session
+ * - (none): Get API statistics
  */
 export async function GET(req: NextRequest) {
   try {
@@ -309,7 +326,7 @@ export async function GET(req: NextRequest) {
     // If listSessions is true, return recent sessions
     if (listSessions === "true") {
       try {
-        const sessions = await getRecentSessions();
+        const sessions: SessionSummary[] = await getRecentSessions();
         return new Response(JSON.stringify({ sessions }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -326,7 +343,7 @@ export async function GET(req: NextRequest) {
     // If sessionId is provided, return chat history
     if (sessionId) {
       try {
-        const history = await getHistoryWithTimestamps(sessionId);
+        const history: ChatHistoryMessage[] = await getHistoryWithTimestamps(sessionId);
 
         return new Response(JSON.stringify({ messages: history }), {
           status: 200,

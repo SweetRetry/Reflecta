@@ -81,3 +81,48 @@ export interface ChatMetrics {
   error?: string;
   userId?: string;
 }
+
+/**
+ * RAG context message from semantic search
+ */
+export interface RAGContext {
+  type: "message" | "memory";
+  content: string;
+  score: number;
+  metadata?: {
+    sessionId?: string;
+    messageId?: number;
+    memoryId?: number;
+  };
+}
+
+/**
+ * Chat history message with timestamp
+ */
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+/**
+ * Session summary info
+ */
+export interface SessionSummary {
+  sessionId: string;
+  title: string;
+  lastMessageTimestamp: number;
+  messageCount: number;
+}
+
+/**
+ * Token statistics for debugging
+ */
+export interface TokenStats {
+  totalTokens: number;
+  maxTokens: number;
+  remaining: number;
+  usagePercentage: string;
+  messageCount: number;
+  averageTokensPerMessage: string | number;
+}

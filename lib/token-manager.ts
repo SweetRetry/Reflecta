@@ -196,7 +196,14 @@ export function smartTruncateMessages(
 export function getTokenStats(
   messages: BaseMessage[],
   model: string = "claude-3-5-sonnet-20241022"
-) {
+): {
+  totalTokens: number;
+  maxTokens: number;
+  remaining: number;
+  usagePercentage: string;
+  messageCount: number;
+  averageTokensPerMessage: string | number;
+} {
   const totalTokens = countMessagesTokens(messages, model);
   const maxTokens = getMaxContextTokens(model);
   const remaining = maxTokens - totalTokens;

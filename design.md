@@ -1,4 +1,4 @@
-# 🪶 Design System 1.2 — Creative Quiet
+# 🪶 Design System
 
 > **Stack**: Tailwind CSS v4 + shadcn/ui + motion  
 > **Philosophy**: 现代 · 简约 · 克制 · 安静与创造力并存  
