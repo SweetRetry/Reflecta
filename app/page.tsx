@@ -293,7 +293,7 @@ export default function ChatPage() {
         onSelectSession={handleSelectSession}
       />
 
-      <SidebarInset className="flex flex-col p-6">
+      <SidebarInset className="flex flex-col p-8 space-y-8">
         <ChatMessages
           messages={messages}
           isLoading={isLoading}
