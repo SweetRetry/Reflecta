@@ -4,23 +4,19 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import { Response } from "@/components/ui/response";
 import { Send, Sparkles, Terminal } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
-import rehypeRaw from "rehype-raw";
 import { motion, AnimatePresence } from "framer-motion";
-import { CodeBlock } from "@/components/code-block";
-import "highlight.js/styles/github-dark.min.css";
 
-interface Message {
+interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
@@ -36,7 +32,7 @@ export default function ChatPage() {
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
-    const userMessage: Message = {
+    const userMessage: ChatMessage = {
       role: "user",
       content: input,
       timestamp: new Date(),
@@ -180,57 +176,27 @@ export default function ChatPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: index * 0.05 }}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
                 >
-                  <div
-                    className={`max-w-[85%] ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-card border border-border"
-                    } rounded-2xl px-5 py-4 shadow-sm`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs font-mono opacity-70">
-                            {message.role === "user" ? "YOU" : "ASSISTANT"}
-                          </span>
-                          <span className="text-xs opacity-40 font-mono">
-                            {message.timestamp.toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                        <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:my-0 prose-pre:rounded-b-lg prose-pre:rounded-t-none">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeHighlight, rehypeRaw]}
-                            components={{
-                              code({ inline, className, children, ...props }: any) {
-                                if (!inline) {
-                                  return (
-                                    <CodeBlock className={className}>
-                                      {children}
-                                    </CodeBlock>
-                                  );
-                                }
-                                return (
-                                  <code className={className} {...props}>
-                                    {children}
-                                  </code>
-                                );
-                              },
-                            }}
-                          >
-                            {message.content}
-                          </ReactMarkdown>
-                        </div>
+                  <Message from={message.role}>
+                    <MessageAvatar
+                      src={message.role === "user" ? "/user-avatar.png" : "/assistant-avatar.png"}
+                      name={message.role === "user" ? "User" : "AI"}
+                    />
+                    <MessageContent>
+                      <div className="flex items-center gap-2 mb-1 opacity-70">
+                        <span className="text-xs font-mono">
+                          {message.role === "user" ? "YOU" : "ASSISTANT"}
+                        </span>
+                        <span className="text-xs opacity-60">
+                          {message.timestamp.toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
                       </div>
-                    </div>
-                  </div>
+                      <Response>{message.content}</Response>
+                    </MessageContent>
+                  </Message>
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -239,65 +205,33 @@ export default function ChatPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex justify-start"
               >
-                <div className="max-w-[85%] bg-card border border-border rounded-2xl px-5 py-4 shadow-sm">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs font-mono opacity-70">
-                          ASSISTANT
-                        </span>
-                        <div className="flex gap-1">
-                          <motion.div
-                            className="w-1 h-1 rounded-full bg-primary"
-                            animate={{ opacity: [0.3, 1, 0.3] }}
-                            transition={{ duration: 1.5, repeat: Infinity }}
-                          />
-                          <motion.div
-                            className="w-1 h-1 rounded-full bg-primary"
-                            animate={{ opacity: [0.3, 1, 0.3] }}
-                            transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
-                          />
-                          <motion.div
-                            className="w-1 h-1 rounded-full bg-primary"
-                            animate={{ opacity: [0.3, 1, 0.3] }}
-                            transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
-                          />
-                        </div>
-                      </div>
-                      <div className="prose prose-sm dark:prose-invert max-w-none prose-pre:my-0 prose-pre:rounded-b-lg prose-pre:rounded-t-none">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeHighlight, rehypeRaw]}
-                          components={{
-                            code({ inline, className, children, ...props }: any) {
-                              if (!inline) {
-                                return (
-                                  <CodeBlock className={className}>
-                                    {children}
-                                  </CodeBlock>
-                                );
-                              }
-                              return (
-                                <code className={className} {...props}>
-                                  {children}
-                                </code>
-                              );
-                            },
-                          }}
-                        >
-                          {streamingContent}
-                        </ReactMarkdown>
-                        <motion.span
-                          className="inline-block w-1.5 h-4 bg-primary ml-1"
-                          animate={{ opacity: [1, 0] }}
-                          transition={{ duration: 0.8, repeat: Infinity }}
+                <Message from="assistant">
+                  <MessageAvatar src="/assistant-avatar.png" name="AI" />
+                  <MessageContent>
+                    <div className="flex items-center gap-2 mb-1 opacity-70">
+                      <span className="text-xs font-mono">ASSISTANT</span>
+                      <div className="flex gap-1">
+                        <motion.div
+                          className="w-1 h-1 rounded-full bg-primary"
+                          animate={{ opacity: [0.3, 1, 0.3] }}
+                          transition={{ duration: 1.5, repeat: Infinity }}
+                        />
+                        <motion.div
+                          className="w-1 h-1 rounded-full bg-primary"
+                          animate={{ opacity: [0.3, 1, 0.3] }}
+                          transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+                        />
+                        <motion.div
+                          className="w-1 h-1 rounded-full bg-primary"
+                          animate={{ opacity: [0.3, 1, 0.3] }}
+                          transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
                         />
                       </div>
                     </div>
-                  </div>
-                </div>
+                    <Response>{streamingContent}</Response>
+                  </MessageContent>
+                </Message>
               </motion.div>
             )}
           </div>
