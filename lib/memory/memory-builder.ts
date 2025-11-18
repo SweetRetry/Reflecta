@@ -7,7 +7,7 @@ import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { ChatValidator } from "../chat-validator";
 import { chatConfig } from "../chat-config";
 import { getMemoryForSession } from "./memory-storage";
-import { searchRelevantContext } from "./memory-rag";
+import { searchRelevantContextEnhanced } from "./memory-rag-enhanced";
 import { smartTruncateMessages, getMaxContextTokens, countMessagesTokens, getTokenStats } from "../token-manager";
 
 /**
@@ -26,9 +26,9 @@ export async function buildMessagesWithMemory(
   const modelConfig = chatConfig.getModelConfig();
   const embeddingConfig = chatConfig.getEmbeddingConfig();
 
-  // Get context messages from RAG
+  // Get context messages from enhanced RAG (with dynamic thresholds and hybrid search)
   const contextMessages = embeddingConfig.enabled && embeddingConfig.enableRag
-    ? await searchRelevantContext(sessionId, currentMessage)
+    ? await searchRelevantContextEnhanced(sessionId, currentMessage)
     : [];
 
   // Add current message

@@ -53,10 +53,11 @@ type MemoryState = typeof MemoryStateAnnotation.State;
 /**
  * Node 1: Extract potential facts from the recent conversation
  * Uses structured output with retry logic for robustness
+ * Now includes existing memories as context to avoid redundancy and maintain consistency
  */
 async function extractFacts(state: MemoryState) {
   console.log("--- Memory Agent: Extracting Facts ---");
-  const { recentMessages } = state;
+  const { recentMessages, sessionId } = state;
 
   if (recentMessages.length === 0) {
     return { extractedFacts: [] };
@@ -78,24 +79,43 @@ async function extractFacts(state: MemoryState) {
     }),
   });
 
+  // Fetch existing memories to provide context
+  const existingMemories = await prisma.userMemory.findMany({
+    where: { sessionId },
+    orderBy: { updatedAt: "desc" },
+    take: 15, // Get recent 15 memories for context
+    select: { content: true, category: true, confidence: true },
+  });
+
+  // Format existing memories
+  const existingMemoriesText = existingMemories.length > 0
+    ? `\n\nEXISTING KNOWLEDGE about this user/project:\n${existingMemories
+        .map((m) => `- ${m.content} [${m.category || "fact"}, confidence: ${m.confidence?.toFixed(2) || "1.00"}]`)
+        .join("\n")}`
+    : "";
+
   // Format messages for context
   const conversationText = recentMessages
     .map((m) => `${m._getType()}: ${m.content}`)
     .join("\n");
 
   const systemPrompt = `You are a Memory Extraction Agent. Your goal is to extract key facts, preferences, and constraints from the conversation that are worth remembering for the long term.
+${existingMemoriesText}
 
   Focus on:
   1. User preferences (e.g., "I like Python", "No SVG format")
   2. Project details/constraints (e.g., "The project uses Next.js 14")
   3. Personal facts (e.g., "My name is Alice")
+  4. Updates to existing knowledge (e.g., if existing memory says "Uses React 17" but conversation mentions "upgraded to React 18")
 
   Ignore:
   1. Casual greetings ("Hello", "How are you")
   2. Temporary context (e.g., "Debug this code snippet")
   3. Questions the user asked (unless they reveal a preference)
+  4. Facts that are IDENTICAL or very similar to existing memories (avoid redundancy)
 
-  If nothing is worth remembering, return an empty array.`;
+  Important: Consider the existing knowledge above. Extract ONLY NEW or UPDATED information.
+  If nothing new is worth remembering, return an empty array.`;
 
   try {
     // Use structured output for guaranteed JSON format

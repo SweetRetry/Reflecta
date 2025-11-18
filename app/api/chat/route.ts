@@ -30,6 +30,10 @@ import {
   getRecentSessions,
 } from "@/lib/chat-memory";
 import { countMessagesTokens } from "@/lib/token-manager";
+import { createChatAgentGraph } from "@/lib/agents/chat-agent-graph";
+import { getMemoryForSession } from "@/lib/chat-memory";
+import { searchRelevantContextEnhanced } from "@/lib/memory/memory-rag-enhanced";
+import { searchRelevantContext } from "@/lib/memory/memory-rag";
 
 // Initialize rate limiter
 let rateLimiter: RateLimiter;
@@ -49,45 +53,6 @@ function createErrorResponse(message: string, status: number = 500): Response {
  */
 function createSSEData(chunk: StreamChunk): string {
   return `data: ${JSON.stringify(chunk)}\n\n`;
-}
-
-/**
- * Build messages using LangChain memory
- * This function retrieves conversation history from memory and adds the current message
- */
-async function buildMessageHistory(
-  request: ChatRequest
-): Promise<Array<HumanMessage | AIMessage>> {
-  const { message, sessionId } = request;
-
-  if (!sessionId) {
-    throw new Error("sessionId is required for memory management");
-  }
-
-  // Build messages from memory (includes history + current message)
-  const messages = await buildMessagesWithMemory(sessionId, message);
-  return messages as Array<HumanMessage | AIMessage>;
-}
-
-/**
- * Initialize and get model instance
- */
-function getModelInstance(): ChatAnthropic {
-  const config = chatConfig.getModelConfig();
-  const baseUrl = chatConfig.getBaseUrl();
-
-  return new ChatAnthropic({
-    model: config.model,
-    maxTokens: config.maxTokens,
-    temperature: config.temperature,
-    topP: config.topP,
-    anthropicApiKey: chatConfig.getApiKey(),
-    ...(baseUrl && {
-      configuration: {
-        baseURL: baseUrl,
-      },
-    }),
-  });
 }
 
 /**
@@ -169,12 +134,6 @@ export async function POST(req: NextRequest) {
     const config = chatConfig.getModelConfig();
     requestId = MetricsCollector.startRequest(config.model, chatRequest.userId);
 
-    // Initialize model
-    const model = getModelInstance();
-
-    // Build message history from memory
-    const messages = await buildMessageHistory(chatRequest);
-
     // Create streaming response
     const stream = new ReadableStream({
       async start(controller) {
@@ -182,39 +141,39 @@ export async function POST(req: NextRequest) {
         let tokensUsed = 0;
 
         try {
-          // Get streaming response from model
-          const streamResponse = await model.stream(messages);
-
           let accumulatedResponse = "";
 
-          // Process chunks
-          for await (const chunk of streamResponse) {
-            const content = chunk.content;
+          // --- Use Chat Agent Graph (with intelligent task planning and tool calling) ---
+          console.log("[Chat Agent] Processing request with enhanced agent graph...");
 
-            // Handle string content
-            if (typeof content === "string" && content) {
-              accumulatedResponse += content;
-              const sseData = createSSEData({ content });
-              controller.enqueue(encoder.encode(sseData));
-            }
-            // Handle array content
-            else if (Array.isArray(content)) {
-              for (const item of content) {
-                // Type guard for string items
-                const stringItem =
-                  typeof item === "object" && item !== null && "text" in item
-                    ? String(item.text)
-                    : typeof item === "string"
-                    ? item
-                    : null;
+          // Get conversation history and context with enhanced RAG
+          const history = await getMemoryForSession(chatRequest.sessionId!);
+          const embeddingConfig = chatConfig.getEmbeddingConfig();
 
-                if (stringItem) {
-                  accumulatedResponse += stringItem;
-                  const sseData = createSSEData({ content: stringItem });
-                  controller.enqueue(encoder.encode(sseData));
-                }
-              }
-            }
+          const contextMessages = embeddingConfig.enabled && embeddingConfig.enableRag
+            ? await searchRelevantContextEnhanced(chatRequest.sessionId!, chatRequest.message)
+            : [];
+
+          // Invoke agent graph with planning and tool execution
+          const agentGraph = createChatAgentGraph();
+          const result = await agentGraph.invoke({
+            sessionId: chatRequest.sessionId!,
+            currentMessage: chatRequest.message,
+            messages: history.slice(-10), // Last 10 messages for context
+            contextMessages,
+          });
+
+          accumulatedResponse = result.finalResponse;
+
+          // Stream the complete response
+          // Split into chunks for progressive display
+          const chunkSize = 50;
+          for (let i = 0; i < accumulatedResponse.length; i += chunkSize) {
+            const chunk = accumulatedResponse.substring(i, i + chunkSize);
+            const sseData = createSSEData({ content: chunk });
+            controller.enqueue(encoder.encode(sseData));
+            // Small delay for better UX (simulates typing)
+            await new Promise(resolve => setTimeout(resolve, 20));
           }
 
           // Calculate accurate token count after streaming completes
