@@ -11,6 +11,10 @@ import { ChatValidator } from "@/lib/chat-validator";
 import { getRateLimiter, RateLimiter } from "@/lib/rate-limiter";
 import { MetricsCollector } from "@/lib/chat-metrics";
 import { ChatRequest, StreamChunk } from "@/lib/chat-types";
+import {
+  buildMessagesWithMemory,
+  saveToMemory,
+} from "@/lib/chat-memory";
 
 // Initialize rate limiter
 let rateLimiter: RateLimiter;
@@ -33,30 +37,21 @@ function createSSEData(chunk: StreamChunk): string {
 }
 
 /**
- * Convert history messages to LangChain message format
+ * Build messages using LangChain memory
+ * This function retrieves conversation history from memory and adds the current message
  */
-function buildMessageHistory(request: ChatRequest) {
-  const { history = [], message } = request;
+async function buildMessageHistory(
+  request: ChatRequest
+): Promise<Array<HumanMessage | AIMessage>> {
+  const { message, sessionId } = request;
 
-  const messages = history
-    .slice(-chatConfig.getModelConfig().maxHistoryLength!)
-    .map((msg) => {
-      const sanitizedContent = ChatValidator.sanitizeMessage(msg.content);
+  if (!sessionId) {
+    throw new Error("sessionId is required for memory management");
+  }
 
-      if (msg.role === "user" || msg.role === "human") {
-        return new HumanMessage(sanitizedContent);
-      }
-      if (msg.role === "assistant" || msg.role === "ai") {
-        return new AIMessage(sanitizedContent);
-      }
-      // Default to user message
-      return new HumanMessage(sanitizedContent);
-    });
-
-  // Add current message
-  messages.push(new HumanMessage(ChatValidator.sanitizeMessage(message)));
-
-  return messages;
+  // Build messages from memory (includes history + current message)
+  const messages = await buildMessagesWithMemory(sessionId, message);
+  return messages as Array<HumanMessage | AIMessage>;
 }
 
 /**
@@ -123,6 +118,11 @@ export async function POST(req: NextRequest) {
 
     const chatRequest = validation.sanitized!;
 
+    // Validate sessionId is provided
+    if (!chatRequest.sessionId) {
+      return createErrorResponse("sessionId is required", 400);
+    }
+
     // Rate limiting
     const identifier = RateLimiter.getIdentifier(req, chatRequest.userId);
     const rateLimitResult = rateLimiter.checkLimit(identifier);
@@ -157,8 +157,8 @@ export async function POST(req: NextRequest) {
     // Initialize model
     const model = getModelInstance();
 
-    // Build message history
-    const messages = buildMessageHistory(chatRequest);
+    // Build message history from memory
+    const messages = await buildMessageHistory(chatRequest);
 
     // Create streaming response
     const stream = new ReadableStream({
@@ -170,6 +170,8 @@ export async function POST(req: NextRequest) {
           // Get streaming response from model
           const streamResponse = await model.stream(messages);
 
+          let accumulatedResponse = "";
+
           // Process chunks
           for await (const chunk of streamResponse) {
             const content = chunk.content;
@@ -177,6 +179,7 @@ export async function POST(req: NextRequest) {
             // Handle string content
             if (typeof content === "string" && content) {
               tokensUsed += content.length / 4; // Rough estimation
+              accumulatedResponse += content;
               const sseData = createSSEData({ content });
               controller.enqueue(encoder.encode(sseData));
             }
@@ -193,10 +196,25 @@ export async function POST(req: NextRequest) {
 
                 if (stringItem) {
                   tokensUsed += stringItem.length / 4;
+                  accumulatedResponse += stringItem;
                   const sseData = createSSEData({ content: stringItem });
                   controller.enqueue(encoder.encode(sseData));
                 }
               }
+            }
+          }
+
+          // Save conversation to memory after streaming completes
+          if (accumulatedResponse && chatRequest.sessionId) {
+            try {
+              await saveToMemory(
+                chatRequest.sessionId,
+                chatRequest.message,
+                accumulatedResponse
+              );
+            } catch (memoryError) {
+              console.error("Error saving to memory:", memoryError);
+              // Don't fail the request if memory save fails
             }
           }
 

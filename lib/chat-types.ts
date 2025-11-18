@@ -1,19 +1,8 @@
-/**
- * Type definitions for chat API
- */
-
-export interface ChatMessage {
-  role: "user" | "assistant" | "system" | "human" | "ai";
-  content: string;
-  timestamp?: number;
-  metadata?: Record<string, unknown>;
-}
-
 export interface ChatRequest {
   message: string;
-  history?: ChatMessage[];
+
   userId?: string;
-  sessionId?: string;
+  sessionId: string; // Required for memory management
   context?: Record<string, unknown>;
 }
 

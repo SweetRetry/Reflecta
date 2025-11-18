@@ -59,41 +59,17 @@ export class ChatValidator {
       }
     }
 
-    // Validate history
-    if (request.history !== undefined) {
-      if (!Array.isArray(request.history)) {
-        errors.push({
-          field: "history",
-          message: "History must be an array",
-        });
-      } else if (request.history.length > this.MAX_HISTORY_ITEMS) {
-        errors.push({
-          field: "history",
-          message: `History must not exceed ${this.MAX_HISTORY_ITEMS} items`,
-        });
-      } else {
-        // Validate each history item
-        request.history.forEach((item, index) => {
-          if (typeof item !== "object" || item === null) {
-            errors.push({
-              field: `history[${index}]`,
-              message: "History item must be an object",
-            });
-          } else if (!item.role || !item.content) {
-            errors.push({
-              field: `history[${index}]`,
-              message: "History item must have role and content",
-            });
-          } else if (
-            !["user", "assistant", "system", "human", "ai"].includes(item.role)
-          ) {
-            errors.push({
-              field: `history[${index}].role`,
-              message: "Invalid role in history item",
-            });
-          }
-        });
-      }
+    // Validate sessionId (required for memory management)
+    if (!request.sessionId) {
+      errors.push({
+        field: "sessionId",
+        message: "sessionId is required for memory management",
+      });
+    } else if (typeof request.sessionId !== "string") {
+      errors.push({
+        field: "sessionId",
+        message: "sessionId must be a string",
+      });
     }
 
     if (errors.length > 0) {
@@ -103,9 +79,8 @@ export class ChatValidator {
     // Sanitize and return
     const sanitized: ChatRequest = {
       message: request.message!.trim(),
-      history: request.history || [],
       userId: request.userId,
-      sessionId: request.sessionId,
+      sessionId: request.sessionId!,
       context: request.context,
     };
 

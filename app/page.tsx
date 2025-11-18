@@ -1,13 +1,26 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
-import { Response } from "@/components/ui/response";
-import { Send, Sparkles, Terminal } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton
+} from "@/components/ai-elements/conversation";
+import {
+  Message,
+  MessageContent,
+  MessageResponse
+} from "@/components/ai-elements/message";
+import { Loader } from "@/components/ai-elements/loader";
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputFooter,
+  PromptInputSubmit,
+} from "@/components/ai-elements/prompt-input";
+import { Sparkles, Terminal } from "lucide-react";
+import { nanoid } from "nanoid";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -17,11 +30,22 @@ interface ChatMessage {
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [sessionId] = useState(() => {
+    // Generate or retrieve sessionId from localStorage
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("chat_session_id");
+      if (stored) {
+        return stored;
+      }
+      const newSessionId = nanoid();
+      localStorage.setItem("chat_session_id", newSessionId);
+      return newSessionId;
+    }
+    return nanoid();
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -29,17 +53,17 @@ export default function ChatPage() {
     }
   }, [messages, streamingContent]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (messageData: { text: string }) => {
+    const userInput = messageData.text;
+    if (!userInput.trim() || isLoading) return;
 
     const userMessage: ChatMessage = {
       role: "user",
-      content: input,
+      content: userInput,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput("");
     setIsLoading(true);
     setStreamingContent("");
 
@@ -50,11 +74,8 @@ export default function ChatPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: input,
-          history: messages.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
+          message: userInput,
+          sessionId: sessionId,
         }),
       });
 
@@ -123,25 +144,18 @@ export default function ChatPage() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-6 py-4">
+        <div className="container mx-auto px-6 py-2">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <Terminal className="w-6 h-6" />
-              <Sparkles className="w-3 h-3 absolute -top-1 -right-1 text-primary animate-pulse" />
+              <Terminal className="w-5 h-5" />
+              <Sparkles className="w-2.5 h-2.5 absolute -top-0.5 -right-0.5 text-primary animate-pulse" />
             </div>
             <div>
-              <h1 className="text-xl font-serif tracking-tight">Claude Memchat</h1>
+              <h1 className="text-lg font-serif tracking-tight">Claude Memchat</h1>
               <p className="text-xs text-muted-foreground font-mono">
                 Powered by LangChain × Anthropic
               </p>
@@ -151,114 +165,84 @@ export default function ChatPage() {
       </header>
 
       {/* Chat Area */}
-      <div className="flex-1 container mx-auto px-6 py-8 flex flex-col max-w-4xl">
-        <ScrollArea className="flex-1 pr-4" ref={scrollRef as any}>
-          <div className="space-y-6 pb-4">
+      <div className="flex-1 container mx-auto px-6 flex flex-col max-w-4xl">
+        <Conversation className="flex-1 py-4">
+          <ConversationContent>
             {messages.length === 0 && !streamingContent && (
-              <div className="h-[60vh] flex items-center justify-center">
-                <div className="text-center space-y-4 max-w-md">
-                  <div className="inline-block p-4 rounded-2xl bg-primary/5 border border-primary/10">
-                    <Sparkles className="w-12 h-12 text-primary" />
-                  </div>
-                  <h2 className="text-2xl font-serif">Start a conversation</h2>
-                  <p className="text-muted-foreground text-sm leading-relaxed">
-                    Ask anything. This AI assistant uses advanced language models to
-                    provide thoughtful, contextual responses.
-                  </p>
-                </div>
-              </div>
+              <ConversationEmptyState
+                icon={<Sparkles className="w-12 h-12 text-primary" />}
+                title="Start a conversation"
+                description="Ask anything. This AI assistant uses advanced language models to provide thoughtful, contextual responses."
+              />
             )}
 
-            <AnimatePresence>
-              {messages.map((message, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                >
-                  <Message from={message.role}>
-                    <MessageAvatar
-                      src={message.role === "user" ? "/user-avatar.png" : "/assistant-avatar.png"}
-                      name={message.role === "user" ? "User" : "AI"}
-                    />
-                    <MessageContent>
-                      <div className="flex items-center gap-2 mb-1 opacity-70">
-                        <span className="text-xs font-mono">
-                          {message.role === "user" ? "YOU" : "ASSISTANT"}
-                        </span>
-                        <span className="text-xs opacity-60">
-                          {message.timestamp.toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                      <Response>{message.content}</Response>
-                    </MessageContent>
-                  </Message>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+            {messages.map((message, index) => (
+              <Message key={index} from={message.role}>
+                <MessageContent>
+                  <div className="flex items-center gap-2 mb-2 opacity-70">
+                    <span className="text-xs font-mono uppercase">
+                      {message.role === "user" ? "You" : "Assistant"}
+                    </span>
+                    <span className="text-xs opacity-60">
+                      {message.timestamp.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                  <MessageResponse>{message.content}</MessageResponse>
+                </MessageContent>
+              </Message>
+            ))}
+
+            {(isLoading && !streamingContent) && (
+              <Message from="assistant">
+                <MessageContent>
+                  <div className="flex items-center gap-2 mb-2 opacity-70">
+                    <span className="text-xs font-mono uppercase">Assistant</span>
+                  </div>
+                  <div className="flex items-center gap-2 py-2">
+                    <Loader size={16} />
+                    <span className="text-sm text-muted-foreground">正在思考中...</span>
+                  </div>
+                </MessageContent>
+              </Message>
+            )}
 
             {streamingContent && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <Message from="assistant">
-                  <MessageAvatar src="/assistant-avatar.png" name="AI" />
-                  <MessageContent>
-                    <div className="flex items-center gap-2 mb-1 opacity-70">
-                      <span className="text-xs font-mono">ASSISTANT</span>
-                      <div className="flex gap-1">
-                        <motion.div
-                          className="w-1 h-1 rounded-full bg-primary"
-                          animate={{ opacity: [0.3, 1, 0.3] }}
-                          transition={{ duration: 1.5, repeat: Infinity }}
-                        />
-                        <motion.div
-                          className="w-1 h-1 rounded-full bg-primary"
-                          animate={{ opacity: [0.3, 1, 0.3] }}
-                          transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
-                        />
-                        <motion.div
-                          className="w-1 h-1 rounded-full bg-primary"
-                          animate={{ opacity: [0.3, 1, 0.3] }}
-                          transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
-                        />
-                      </div>
+              <Message from="assistant">
+                <MessageContent>
+                  <div className="flex items-center gap-2 mb-2 opacity-70">
+                    <span className="text-xs font-mono uppercase">Assistant</span>
+                    <div className="flex gap-1">
+                      <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
+                      <div className="w-1 h-1 rounded-full bg-primary animate-pulse [animation-delay:200ms]" />
+                      <div className="w-1 h-1 rounded-full bg-primary animate-pulse [animation-delay:400ms]" />
                     </div>
-                    <Response>{streamingContent}</Response>
-                  </MessageContent>
-                </Message>
-              </motion.div>
+                  </div>
+                  <MessageResponse>{streamingContent}</MessageResponse>
+                </MessageContent>
+              </Message>
             )}
-          </div>
-        </ScrollArea>
+          </ConversationContent>
+          <ConversationScrollButton />
+        </Conversation>
 
         {/* Input Area */}
-        <div className="mt-6 relative">
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background to-transparent -top-8 pointer-events-none" />
-          <div className="relative bg-card border border-border rounded-2xl shadow-lg p-2 flex items-end gap-2">
-            <Input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
+        <div className="py-6">
+          <PromptInput onSubmit={sendMessage}>
+            <PromptInputTextarea
               placeholder="Type your message..."
               disabled={isLoading}
-              className="flex-1 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent resize-none min-h-[44px] text-base"
             />
-            <Button
-              onClick={sendMessage}
-              disabled={isLoading || !input.trim()}
-              size="icon"
-              className="h-11 w-11 rounded-xl shrink-0 transition-all hover:scale-105 active:scale-95"
-            >
-              <Send className="w-4 h-4" />
-            </Button>
-          </div>
+            <PromptInputFooter>
+              <div className="flex-1" />
+              <PromptInputSubmit
+                status={isLoading ? "streaming" : undefined}
+                disabled={isLoading}
+              />
+            </PromptInputFooter>
+          </PromptInput>
           <p className="text-xs text-muted-foreground text-center mt-3 font-mono">
             Press <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Enter</kbd> to
             send • <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Shift+Enter</kbd> for new line
