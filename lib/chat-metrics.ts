@@ -1,20 +1,10 @@
-/**
- * Metrics and monitoring for chat API
- */
-
 import { ChatMetrics } from "./chat-types";
 
 export class MetricsCollector {
   private static metrics: ChatMetrics[] = [];
   private static readonly MAX_METRICS = 1000;
 
-  /**
-   * Start tracking a request
-   */
-  static startRequest(
-    modelUsed: string,
-    userId?: string
-  ): string {
+  static startRequest(modelUsed: string, userId?: string): string {
     const requestId = this.generateRequestId();
     const metric: ChatMetrics = {
       requestId,
@@ -24,23 +14,13 @@ export class MetricsCollector {
     };
 
     this.metrics.push(metric);
-
-    // Keep only recent metrics
     if (this.metrics.length > this.MAX_METRICS) {
       this.metrics = this.metrics.slice(-this.MAX_METRICS);
     }
-
     return requestId;
   }
 
-  /**
-   * Complete request tracking
-   */
-  static completeRequest(
-    requestId: string,
-    tokensUsed?: number,
-    error?: string
-  ): void {
+  static completeRequest(requestId: string, tokensUsed?: number, error?: string): void {
     const metric = this.metrics.find((m) => m.requestId === requestId);
     if (metric) {
       metric.endTime = Date.now();
@@ -49,22 +29,6 @@ export class MetricsCollector {
     }
   }
 
-  /**
-   * Get metrics for a time range
-   */
-  static getMetrics(startTime?: number, endTime?: number): ChatMetrics[] {
-    const now = Date.now();
-    const start = startTime || now - 60 * 60 * 1000; // Last hour by default
-    const end = endTime || now;
-
-    return this.metrics.filter(
-      (m) => m.startTime >= start && m.startTime <= end
-    );
-  }
-
-  /**
-   * Get aggregated statistics
-   */
   static getStatistics(timeRangeMs: number = 60 * 60 * 1000) {
     const now = Date.now();
     const recentMetrics = this.metrics.filter(
@@ -102,9 +66,6 @@ export class MetricsCollector {
     };
   }
 
-  /**
-   * Log metrics (can be extended to send to external services)
-   */
   static logMetrics(requestId: string): void {
     const metric = this.metrics.find((m) => m.requestId === requestId);
     if (!metric) return;
@@ -127,18 +88,7 @@ export class MetricsCollector {
     );
   }
 
-  /**
-   * Generate unique request ID
-   */
   private static generateRequestId(): string {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Clear old metrics
-   */
-  static clearOldMetrics(olderThanMs: number): void {
-    const cutoff = Date.now() - olderThanMs;
-    this.metrics = this.metrics.filter((m) => m.startTime >= cutoff);
   }
 }

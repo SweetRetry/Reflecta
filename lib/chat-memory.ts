@@ -1,282 +1,153 @@
 /**
  * Memory management for chat conversations using Prisma
- * Type-safe database access with Prisma ORM
  */
 
 import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import { ChatValidator } from "./chat-validator";
 import { chatConfig } from "./chat-config";
 import { prisma } from "./prisma";
+import { LocalEmbeddingService } from "./chat-embedding";
+import { PrismaVectorStore } from "./chat-vector-store";
 
-/**
- * Convert database row to LangChain message
- */
-function rowToMessage(row: {
-  role: string;
-  content: string;
-}): BaseMessage {
-  if (row.role === "human") {
-    return new HumanMessage(row.content);
-  } else if (row.role === "ai") {
-    return new AIMessage(row.content);
-  }
-  throw new Error(`Unknown role: ${row.role}`);
+function rowToMessage(row: { role: string; content: string }): BaseMessage {
+  return row.role === "human" 
+    ? new HumanMessage(row.content) 
+    : new AIMessage(row.content);
 }
 
-/**
- * Get or create a chat history instance for a session
- * Returns messages from database
- */
-export async function getMemoryForSession(
-  sessionId: string
-): Promise<BaseMessage[]> {
+export async function getMemoryForSession(sessionId: string): Promise<BaseMessage[]> {
   const messages = await prisma.chatMessage.findMany({
     where: { sessionId },
-    select: {
-      role: true,
-      content: true,
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
+    select: { role: true, content: true },
+    orderBy: { createdAt: "asc" },
   });
-
   return messages.map(rowToMessage);
 }
 
-/**
- * Save user message and assistant response to memory
- */
 export async function saveToMemory(
   sessionId: string,
   userMessage: string,
   assistantMessage: string
 ): Promise<void> {
-  const sanitizedUserMessage = ChatValidator.sanitizeMessage(userMessage);
-  const sanitizedAssistantMessage = ChatValidator.sanitizeMessage(
-    assistantMessage
-  );
+  const userMsg = ChatValidator.sanitizeMessage(userMessage);
+  const aiMsg = ChatValidator.sanitizeMessage(assistantMessage);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const enableEmbedding = chatConfig.getEmbeddingConfig().enabled ?? true;
 
-  // Use transaction to ensure session and messages are saved atomically
   await prisma.$transaction(async (tx) => {
-    // Create or update session
     await tx.chatSession.upsert({
       where: { id: sessionId },
-      update: {
-        updatedAt: Math.floor(Date.now() / 1000),
-      },
+      update: { updatedAt: timestamp },
       create: {
         id: sessionId,
-        title: sanitizedUserMessage.substring(0, 100), // Use first message as title
-        createdAt: Math.floor(Date.now() / 1000),
-        updatedAt: Math.floor(Date.now() / 1000),
+        title: userMsg.substring(0, 100),
+        createdAt: timestamp,
+        updatedAt: timestamp,
       },
     });
 
-    // Create user message
-    await tx.chatMessage.create({
-      data: {
-        sessionId,
-        role: "human",
-        content: sanitizedUserMessage,
-      },
+    const userMsgRow = await tx.chatMessage.create({
+      data: { sessionId, role: "human", content: userMsg },
     });
 
-    // Create AI message
+    if (enableEmbedding) {
+      try {
+        const vector = await LocalEmbeddingService.getInstance().embedText(userMsg);
+        if (vector.length > 0) {
+          await (tx as any).messageEmbedding.create({
+            data: { messageId: userMsgRow.id, sessionId, vector: JSON.stringify(vector) },
+          });
+        }
+      } catch (error) {
+        console.error("Error creating embedding:", error);
+      }
+    }
+
     await tx.chatMessage.create({
-      data: {
-        sessionId,
-        role: "ai",
-        content: sanitizedAssistantMessage,
-      },
+      data: { sessionId, role: "ai", content: aiMsg },
     });
   });
 }
 
-/**
- * Get conversation history from memory
- */
-export async function getHistoryFromMemory(
-  sessionId: string
+export async function searchRelevantContext(
+  sessionId: string,
+  currentMessage: string
 ): Promise<BaseMessage[]> {
-  const messages = await getMemoryForSession(sessionId);
-  
-  // Limit history length based on config
-  // Note: We'll limit in buildMessagesWithMemory to keep it simple
-  return messages;
+  const config = chatConfig.getEmbeddingConfig();
+  if (!config.enabled) return [];
+
+  const sanitized = ChatValidator.sanitizeMessage(currentMessage);
+  if (!sanitized.trim()) return [];
+
+  try {
+    const vector = await LocalEmbeddingService.getInstance().embedText(sanitized);
+    if (!vector.length) return [];
+
+    const results = await PrismaVectorStore.getInstance().searchSimilar({
+      queryVector: vector,
+      topK: config.topK ?? 8,
+      candidateLimit: config.candidateLimit ?? 500,
+      excludeSessionId: sessionId,
+    });
+
+    if (!results.length) return [];
+
+    const messages = await prisma.chatMessage.findMany({
+      where: { id: { in: results.map((r) => r.messageId) } },
+      select: { role: true, content: true },
+    });
+
+    return messages.map(rowToMessage);
+  } catch (error) {
+    console.error("Error searching relevant context:", error);
+    return [];
+  }
 }
 
-/**
- * Get conversation history with timestamps for frontend display
- */
 export async function getHistoryWithTimestamps(
   sessionId: string
 ): Promise<Array<{ role: string; content: string; timestamp: number }>> {
   const messages = await prisma.chatMessage.findMany({
     where: { sessionId },
-    select: {
-      role: true,
-      content: true,
-      createdAt: true,
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
+    select: { role: true, content: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
   });
 
-  return messages.map((msg: { role: string; content: string; createdAt: number }) => ({
+  return messages.map((msg) => ({
     role: msg.role === "human" ? "user" : "assistant",
     content: msg.content,
-    timestamp: msg.createdAt * 1000, // Convert from seconds to milliseconds
+    timestamp: msg.createdAt * 1000,
   }));
 }
 
-/**
- * Clear memory for a session
- */
-export async function clearMemory(sessionId: string): Promise<void> {
-  await prisma.chatMessage.deleteMany({
-    where: { sessionId },
-  });
-}
-
-/**
- * Get all messages from memory and add current user message
- */
 export async function buildMessagesWithMemory(
   sessionId: string,
   currentMessage: string
 ): Promise<BaseMessage[]> {
-  const history = await getHistoryFromMemory(sessionId);
-  const sanitizedMessage = ChatValidator.sanitizeMessage(currentMessage);
+  const history = await getMemoryForSession(sessionId);
+  const sanitized = ChatValidator.sanitizeMessage(currentMessage);
+  const modelConfig = chatConfig.getModelConfig();
+  const embeddingConfig = chatConfig.getEmbeddingConfig();
   
-  // Limit history length
-  const maxHistoryLength = chatConfig.getModelConfig().maxHistoryLength || 20;
-  const limitedHistory = history.slice(-maxHistoryLength * 2);
-  
-  const messages = [...limitedHistory, new HumanMessage(sanitizedMessage)];
-  return messages;
+  const limitedHistory = history.slice(-(modelConfig.maxHistoryLength || 20) * 2);
+  const contextMessages = embeddingConfig.enabled && embeddingConfig.enableRag
+    ? await searchRelevantContext(sessionId, currentMessage)
+    : [];
+
+  return [...contextMessages, ...limitedHistory, new HumanMessage(sanitized)];
 }
 
-/**
- * Create or update a chat session
- */
-export async function createOrUpdateSession(
-  sessionId: string,
-  title?: string
-): Promise<void> {
-  await prisma.chatSession.upsert({
-    where: { id: sessionId },
-    update: {
-      updatedAt: Math.floor(Date.now() / 1000),
-      ...(title && { title }),
-    },
-    create: {
-      id: sessionId,
-      title: title || null,
-      createdAt: Math.floor(Date.now() / 1000),
-      updatedAt: Math.floor(Date.now() / 1000),
-    },
-  });
-}
-
-/**
- * Get recent chat sessions
- */
-export async function getRecentSessions(
-  limit: number = 50
-): Promise<Array<{
-  sessionId: string;
-  title: string | null;
-  lastMessageTimestamp: number;
-  messageCount?: number;
-}>> {
-  // Fetch sessions from ChatSession table with message count
+export async function getRecentSessions(limit: number = 50) {
   const sessions = await prisma.chatSession.findMany({
-    orderBy: {
-      updatedAt: "desc",
-    },
+    orderBy: { updatedAt: "desc" },
     take: limit,
-    include: {
-      _count: {
-        select: { messages: true },
-      },
-    },
+    include: { _count: { select: { messages: true } } },
   });
 
-  return sessions.map((session) => ({
-    sessionId: session.id,
-    title: session.title,
-    lastMessageTimestamp: session.updatedAt * 1000, // Convert to ms
-    messageCount: session._count.messages,
+  return sessions.map((s) => ({
+    sessionId: s.id,
+    title: s.title,
+    lastMessageTimestamp: s.updatedAt * 1000,
+    messageCount: s._count.messages,
   }));
-}
-
-/**
- * Get session by ID with metadata
- */
-export async function getSessionById(sessionId: string): Promise<{
-  id: string;
-  title: string | null;
-  createdAt: number;
-  updatedAt: number;
-} | null> {
-  const session = await prisma.chatSession.findUnique({
-    where: { id: sessionId },
-  });
-
-  if (!session) return null;
-
-  return {
-    id: session.id,
-    title: session.title,
-    createdAt: session.createdAt * 1000,
-    updatedAt: session.updatedAt * 1000,
-  };
-}
-
-/**
- * Update session title
- */
-export async function updateSessionTitle(
-  sessionId: string,
-  title: string
-): Promise<void> {
-  await prisma.chatSession.update({
-    where: { id: sessionId },
-    data: { title },
-  });
-}
-
-/**
- * Delete a session and all its messages
- */
-export async function deleteSession(sessionId: string): Promise<void> {
-  // Cascade delete will handle messages automatically
-  await prisma.chatSession.delete({
-    where: { id: sessionId },
-  });
-}
-
-/**
- * Clean up old sessions (optional, for memory management)
- */
-export async function cleanupOldSessions(maxAge: number = 24 * 60 * 60 * 1000): Promise<void> {
-  const cutoffTime = Math.floor((Date.now() - maxAge) / 1000);
-  
-  await prisma.chatMessage.deleteMany({
-    where: {
-      createdAt: {
-        lt: cutoffTime,
-      },
-    },
-  });
-}
-
-/**
- * Close database connection (useful for cleanup)
- * Note: Prisma Client manages connections automatically, but we can disconnect if needed
- */
-export async function closeDatabase(): Promise<void> {
-  await prisma.$disconnect();
 }

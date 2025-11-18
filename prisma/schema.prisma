@@ -33,10 +33,28 @@ model ChatMessage {
   createdAt Int      @default(dbgenerated("(unixepoch())")) @map("created_at")
 
   // Relation to session
-  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   ChatSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  embeddings MessageEmbedding[]
 
   @@index([sessionId], name: "idx_session_id")
   @@index([sessionId, createdAt], name: "idx_session_created")
   @@map("chat_messages")
+}
+
+// Message embedding model for semantic search and global context
+model MessageEmbedding {
+  id        Int    @id @default(autoincrement())
+  messageId Int    @map("message_id")
+  sessionId String @map("session_id")
+  // Store embedding as JSON string of float array for simplicity in MVP
+  vector    String
+  createdAt Int    @default(dbgenerated("(unixepoch())")) @map("created_at")
+
+  // Relation to message
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt], name: "idx_embedding_session_created")
+  @@index([messageId], name: "idx_embedding_message")
+  @@map("message_embeddings")
 }
 

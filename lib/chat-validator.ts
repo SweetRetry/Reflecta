@@ -6,12 +6,8 @@ import { ChatRequest, ValidationError } from "./chat-types";
 
 export class ChatValidator {
   private static readonly MAX_MESSAGE_LENGTH = 10000;
-  private static readonly MAX_HISTORY_ITEMS = 50;
   private static readonly MIN_MESSAGE_LENGTH = 1;
 
-  /**
-   * Validate chat request
-   */
   static validateRequest(data: unknown): {
     valid: boolean;
     errors: ValidationError[];
@@ -87,39 +83,10 @@ export class ChatValidator {
     return { valid: true, errors: [], sanitized };
   }
 
-  /**
-   * Sanitize message content to prevent injection attacks
-   */
   static sanitizeMessage(message: string): string {
     return message
       .trim()
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "") // Remove control characters
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
       .slice(0, this.MAX_MESSAGE_LENGTH);
-  }
-
-  /**
-   * Validate and sanitize history
-   */
-  static sanitizeHistory(
-    history: unknown[]
-  ): Array<{ role: string; content: string }> {
-    if (!Array.isArray(history)) {
-      return [];
-    }
-
-    return history
-      .filter(
-        (item): item is { role: string; content: string } =>
-          typeof item === "object" &&
-          item !== null &&
-          "role" in item &&
-          "content" in item &&
-          typeof item.content === "string"
-      )
-      .slice(-this.MAX_HISTORY_ITEMS)
-      .map((item) => ({
-        role: item.role,
-        content: this.sanitizeMessage(item.content),
-      }));
   }
 }
