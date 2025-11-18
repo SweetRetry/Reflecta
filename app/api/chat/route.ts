@@ -5,7 +5,7 @@
 
 import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { chatConfig } from "@/lib/chat-config";
 import { ChatValidator } from "@/lib/chat-validator";
 import { getRateLimiter, RateLimiter } from "@/lib/rate-limiter";
@@ -206,18 +206,19 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Save conversation to memory after streaming completes
+          // Save conversation to memory asynchronously after response is sent
           if (accumulatedResponse && chatRequest.sessionId) {
-            try {
-              await saveToMemory(
-                chatRequest.sessionId,
-                chatRequest.message,
-                accumulatedResponse
-              );
-            } catch (memoryError) {
-              console.error("Error saving to memory:", memoryError);
-              // Don't fail the request if memory save fails
-            }
+            const sessionId = chatRequest.sessionId;
+            const message = chatRequest.message;
+            const response = accumulatedResponse;
+
+            after(async () => {
+              try {
+                await saveToMemory(sessionId, message, response);
+              } catch (memoryError) {
+                console.error("Error saving to memory in background:", memoryError);
+              }
+            });
           }
 
           // Send completion marker
