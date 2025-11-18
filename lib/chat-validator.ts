@@ -2,91 +2,69 @@
  * Input validation and sanitization for chat API
  */
 
+import { z } from "zod";
 import { ChatRequest, ValidationError } from "./chat-types";
 
-export class ChatValidator {
-  private static readonly MAX_MESSAGE_LENGTH = 10000;
-  private static readonly MIN_MESSAGE_LENGTH = 1;
+const MAX_MESSAGE_LENGTH = 10000;
+const MIN_MESSAGE_LENGTH = 1;
 
+// Zod schema for ChatRequest validation
+const ChatRequestSchema = z.object({
+  message: z
+    .string()
+    .min(MIN_MESSAGE_LENGTH, `Message must be at least ${MIN_MESSAGE_LENGTH} character`)
+    .max(MAX_MESSAGE_LENGTH, `Message must not exceed ${MAX_MESSAGE_LENGTH} characters`)
+    .transform((val) => val.trim()),
+  sessionId: z.string().min(1, "sessionId is required for memory management"),
+  userId: z.string().optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
+});
+
+/**
+ * Chat request validator for input validation and sanitization
+ */
+export class ChatValidator {
+  /**
+   * Validates and sanitizes a chat request
+   * @param data - Raw request data to validate
+   * @returns Validation result with sanitized data if valid
+   */
   static validateRequest(data: unknown): {
     valid: boolean;
     errors: ValidationError[];
     sanitized?: ChatRequest;
   } {
-    const errors: ValidationError[] = [];
+    const result = ChatRequestSchema.safeParse(data);
 
-    // Type check
-    if (typeof data !== "object" || data === null) {
-      errors.push({
-        field: "request",
-        message: "Request body must be a valid object",
+    if (!result.success) {
+      // Convert Zod errors to ValidationError format
+      const errors: ValidationError[] = result.error.issues.map((issue) => {
+        const field = issue.path.length > 0 ? issue.path.join(".") : "request";
+        return {
+          field,
+          message: issue.message,
+        };
       });
+
       return { valid: false, errors };
     }
 
-    const request = data as Partial<ChatRequest>;
-
-    // Validate message
-    if (!request.message) {
-      errors.push({
-        field: "message",
-        message: "Message is required",
-      });
-    } else if (typeof request.message !== "string") {
-      errors.push({
-        field: "message",
-        message: "Message must be a string",
-      });
-    } else {
-      const trimmedMessage = request.message.trim();
-
-      if (trimmedMessage.length < this.MIN_MESSAGE_LENGTH) {
-        errors.push({
-          field: "message",
-          message: `Message must be at least ${this.MIN_MESSAGE_LENGTH} character`,
-        });
-      }
-
-      if (trimmedMessage.length > this.MAX_MESSAGE_LENGTH) {
-        errors.push({
-          field: "message",
-          message: `Message must not exceed ${this.MAX_MESSAGE_LENGTH} characters`,
-        });
-      }
-    }
-
-    // Validate sessionId (required for memory management)
-    if (!request.sessionId) {
-      errors.push({
-        field: "sessionId",
-        message: "sessionId is required for memory management",
-      });
-    } else if (typeof request.sessionId !== "string") {
-      errors.push({
-        field: "sessionId",
-        message: "sessionId must be a string",
-      });
-    }
-
-    if (errors.length > 0) {
-      return { valid: false, errors };
-    }
-
-    // Sanitize and return
-    const sanitized: ChatRequest = {
-      message: request.message!.trim(),
-      userId: request.userId,
-      sessionId: request.sessionId!,
-      context: request.context,
+    return {
+      valid: true,
+      errors: [],
+      sanitized: result.data,
     };
-
-    return { valid: true, errors: [], sanitized };
   }
 
+  /**
+   * Sanitizes a message by removing control characters and trimming
+   * @param message - Raw message string to sanitize
+   * @returns Sanitized message string
+   */
   static sanitizeMessage(message: string): string {
     return message
       .trim()
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-      .slice(0, this.MAX_MESSAGE_LENGTH);
+      .slice(0, MAX_MESSAGE_LENGTH);
   }
 }

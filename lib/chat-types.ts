@@ -1,3 +1,6 @@
+/**
+ * Chat request payload structure
+ */
 export interface ChatRequest {
   message: string;
 
@@ -6,6 +9,9 @@ export interface ChatRequest {
   context?: Record<string, unknown>;
 }
 
+/**
+ * Server-Sent Events (SSE) chunk structure for streaming responses
+ */
 export interface StreamChunk {
   content?: string;
   error?: string;
@@ -16,6 +22,9 @@ export interface StreamChunk {
   };
 }
 
+/**
+ * Configuration for the chat model
+ */
 export interface ChatConfig {
   model: string;
   maxTokens: number;
@@ -41,23 +50,28 @@ export interface EmbeddingConfig {
    * RAG 检索时的 topK
    */
   topK?: number;
-  /**
-   * 从数据库中加载的候选数量上限
-   */
-  candidateLimit?: number;
 }
 
+/**
+ * Rate limiting configuration
+ */
 export interface RateLimitConfig {
   maxRequestsPerMinute: number;
   maxRequestsPerHour: number;
   windowMs: number;
 }
 
+/**
+ * Validation error structure
+ */
 export interface ValidationError {
   field: string;
   message: string;
 }
 
+/**
+ * Chat metrics for tracking request performance
+ */
 export interface ChatMetrics {
   requestId: string;
   startTime: number;

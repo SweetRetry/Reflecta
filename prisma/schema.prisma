@@ -3,22 +3,25 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
 // Chat session model for tracking conversations
 model ChatSession {
   id        String   @id // Using nanoid as session ID
   title     String?  // Optional title for the session (first message or custom)
-  createdAt Int      @default(dbgenerated("(unixepoch())")) @map("created_at")
-  updatedAt Int      @default(dbgenerated("(unixepoch())")) @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   // Relations
   messages  ChatMessage[]
+  memories  UserMemory[]
 
   @@index([updatedAt], name: "idx_updated_at")
   @@map("chat_sessions")
@@ -30,7 +33,7 @@ model ChatMessage {
   sessionId String   @map("session_id")
   role      String   // "human" or "ai"
   content   String
-  createdAt Int      @default(dbgenerated("(unixepoch())")) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   // Relation to session
   session   ChatSession       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -43,12 +46,12 @@ model ChatMessage {
 
 // Message embedding model for semantic search and global context
 model MessageEmbedding {
-  id        Int    @id @default(autoincrement())
-  messageId Int    @map("message_id")
-  sessionId String @map("session_id")
-  // Store embedding as JSON string of float array for simplicity in MVP
-  vector    String
-  createdAt Int    @default(dbgenerated("(unixepoch())")) @map("created_at")
+  id        Int                                     @id @default(autoincrement())
+  messageId Int                                     @map("message_id")
+  sessionId String                                  @map("session_id")
+  // Use pgvector type for efficient similarity search (384 dimensions for e5-small)
+  vector    Unsupported("vector(384)")
+  createdAt DateTime                                @default(now()) @map("created_at")
 
   // Relation to message
   message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
@@ -56,5 +59,45 @@ model MessageEmbedding {
   @@index([sessionId, createdAt], name: "idx_embedding_session_created")
   @@index([messageId], name: "idx_embedding_message")
   @@map("message_embeddings")
+}
+
+// User memory model for storing refined facts extracted from conversations
+model UserMemory {
+  id        Int      @id @default(autoincrement())
+  sessionId String   @map("session_id")
+  // The extracted fact or knowledge (e.g., "User prefers Python over JavaScript")
+  content   String
+  // Optional category/type (e.g., "preference", "fact", "constraint")
+  category  String?
+  // Confidence score from extraction (0-1)
+  confidence Float?  @default(1.0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relation to session
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  embedding MemoryEmbedding?
+
+  @@index([sessionId], name: "idx_memory_session")
+  @@index([sessionId, createdAt], name: "idx_memory_session_created")
+  @@index([category], name: "idx_memory_category")
+  @@map("user_memories")
+}
+
+// Memory embedding model for semantic search of refined memories
+model MemoryEmbedding {
+  id        Int                                     @id @default(autoincrement())
+  memoryId  Int                                     @unique @map("memory_id")
+  sessionId String                                  @map("session_id")
+  // Use pgvector type for efficient similarity search (384 dimensions for e5-small)
+  vector    Unsupported("vector(384)")
+  createdAt DateTime                                @default(now()) @map("created_at")
+
+  // Relation to memory
+  memory UserMemory @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt], name: "idx_memory_embedding_session_created")
+  @@index([memoryId], name: "idx_memory_embedding_memory")
+  @@map("memory_embeddings")
 }
 

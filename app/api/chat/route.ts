@@ -13,10 +13,11 @@ import { MetricsCollector } from "@/lib/chat-metrics";
 import { ChatRequest, StreamChunk } from "@/lib/chat-types";
 import {
   buildMessagesWithMemory,
-  saveToMemory,
+  processMemoryInBackground,
   getHistoryWithTimestamps,
   getRecentSessions,
 } from "@/lib/chat-memory";
+import { countMessagesTokens } from "@/lib/token-manager";
 
 // Initialize rate limiter
 let rateLimiter: RateLimiter;
@@ -180,7 +181,6 @@ export async function POST(req: NextRequest) {
 
             // Handle string content
             if (typeof content === "string" && content) {
-              tokensUsed += content.length / 4; // Rough estimation
               accumulatedResponse += content;
               const sseData = createSSEData({ content });
               controller.enqueue(encoder.encode(sseData));
@@ -197,13 +197,18 @@ export async function POST(req: NextRequest) {
                     : null;
 
                 if (stringItem) {
-                  tokensUsed += stringItem.length / 4;
                   accumulatedResponse += stringItem;
                   const sseData = createSSEData({ content: stringItem });
                   controller.enqueue(encoder.encode(sseData));
                 }
               }
             }
+          }
+
+          // Calculate accurate token count after streaming completes
+          if (accumulatedResponse) {
+            const aiMessage = new AIMessage(accumulatedResponse);
+            tokensUsed = countMessagesTokens([aiMessage], config.model);
           }
 
           // Save conversation to memory asynchronously after response is sent
@@ -214,9 +219,9 @@ export async function POST(req: NextRequest) {
 
             after(async () => {
               try {
-                await saveToMemory(sessionId, message, response);
+                await processMemoryInBackground(sessionId, message, response);
               } catch (memoryError) {
-                console.error("Error saving to memory in background:", memoryError);
+                console.error("Error processing memory in background:", memoryError);
               }
             });
           }

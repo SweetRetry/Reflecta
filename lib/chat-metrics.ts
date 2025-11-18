@@ -1,11 +1,22 @@
+import { nanoid } from "nanoid";
 import { ChatMetrics } from "./chat-types";
 
+/**
+ * Metrics collector for tracking chat request performance
+ * Stores metrics in-memory with configurable retention limit
+ */
 export class MetricsCollector {
   private static metrics: ChatMetrics[] = [];
   private static readonly MAX_METRICS = 1000;
 
+  /**
+   * Starts tracking a new request
+   * @param modelUsed - Model name used for this request
+   * @param userId - Optional user ID
+   * @returns Request ID for tracking
+   */
   static startRequest(modelUsed: string, userId?: string): string {
-    const requestId = this.generateRequestId();
+    const requestId = `req_${nanoid()}`;
     const metric: ChatMetrics = {
       requestId,
       startTime: Date.now(),
@@ -20,6 +31,12 @@ export class MetricsCollector {
     return requestId;
   }
 
+  /**
+   * Completes tracking for a request
+   * @param requestId - Request ID from startRequest
+   * @param tokensUsed - Number of tokens used (optional)
+   * @param error - Error message if request failed (optional)
+   */
   static completeRequest(requestId: string, tokensUsed?: number, error?: string): void {
     const metric = this.metrics.find((m) => m.requestId === requestId);
     if (metric) {
@@ -29,6 +46,11 @@ export class MetricsCollector {
     }
   }
 
+  /**
+   * Gets statistics for requests within a time range
+   * @param timeRangeMs - Time range in milliseconds (default: 1 hour)
+   * @returns Statistics object with request counts, response times, and token usage
+   */
   static getStatistics(timeRangeMs: number = 60 * 60 * 1000) {
     const now = Date.now();
     const recentMetrics = this.metrics.filter(
@@ -66,6 +88,10 @@ export class MetricsCollector {
     };
   }
 
+  /**
+   * Logs metrics for a specific request to console
+   * @param requestId - Request ID to log metrics for
+   */
   static logMetrics(requestId: string): void {
     const metric = this.metrics.find((m) => m.requestId === requestId);
     if (!metric) return;
@@ -86,9 +112,5 @@ export class MetricsCollector {
         timestamp: new Date(metric.startTime).toISOString(),
       })
     );
-  }
-
-  private static generateRequestId(): string {
-    return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }

@@ -1,6 +1,10 @@
 import { FeatureExtractionPipeline } from "@xenova/transformers";
 import { chatConfig } from "./chat-config";
 
+/**
+ * Local embedding service using Xenova Transformers
+ * Provides on-device embedding generation without external API calls
+ */
 export class LocalEmbeddingService {
   private static instance: LocalEmbeddingService;
   private modelLoaded = false;
@@ -8,6 +12,10 @@ export class LocalEmbeddingService {
 
   private constructor() {}
 
+  /**
+   * Gets the singleton instance of LocalEmbeddingService
+   * @returns The singleton LocalEmbeddingService instance
+   */
   static getInstance(): LocalEmbeddingService {
     if (!LocalEmbeddingService.instance) {
       LocalEmbeddingService.instance = new LocalEmbeddingService();
@@ -23,6 +31,11 @@ export class LocalEmbeddingService {
     this.modelLoaded = true;
   }
 
+  /**
+   * Generates embedding vector for a text string
+   * @param text - Text to embed
+   * @returns Array of numbers representing the embedding vector
+   */
   async embedText(text: string): Promise<number[]> {
     if (!text.trim()) return [];
     await this.ensureModelLoaded();

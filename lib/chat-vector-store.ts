@@ -1,7 +1,10 @@
 import { prisma } from "./prisma";
+import { Prisma } from "@prisma/client";
+import { toPgVectorString } from "./vector-utils";
 
 export interface VectorStoreSearchResult {
-  messageId: number;
+  messageId?: number;
+  memoryId?: number;
   sessionId: string;
   score: number;
 }
@@ -9,46 +12,29 @@ export interface VectorStoreSearchResult {
 export interface VectorStoreSearchParams {
   queryVector: number[];
   topK: number;
-  candidateLimit?: number;
   excludeSessionId?: string;
+  minScore?: number;
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
-
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-
-  for (let i = 0; i < a.length; i++) {
-    const va = a[i];
-    const vb = b[i];
-    dot += va * vb;
-    normA += va * va;
-    normB += vb * vb;
-  }
-
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+export interface MemorySearchResult {
+  memoryId: number;
+  sessionId: string;
+  score: number;
 }
 
-function parseVector(json: string): number[] {
-  try {
-    const parsed = JSON.parse(json);
-    if (Array.isArray(parsed)) {
-      return parsed.map((v) => Number(v) || 0);
-    }
-    return [];
-  } catch {
-    return [];
-  }
-}
-
+/**
+ * Vector store implementation using Prisma and pgvector
+ * Provides semantic search capabilities for messages and memories
+ */
 export class PrismaVectorStore {
   private static instance: PrismaVectorStore;
 
   private constructor() {}
 
+  /**
+   * Gets the singleton instance of PrismaVectorStore
+   * @returns The singleton PrismaVectorStore instance
+   */
   static getInstance(): PrismaVectorStore {
     if (!PrismaVectorStore.instance) {
       PrismaVectorStore.instance = new PrismaVectorStore();
@@ -56,42 +42,99 @@ export class PrismaVectorStore {
     return PrismaVectorStore.instance;
   }
 
-  async searchSimilar(
+  /**
+   * Search for similar messages using MessageEmbedding with pgvector
+   * Typically used for cross-session RAG (retrieving similar historical conversations)
+   * @param params - Search parameters including query vector, topK, and filters
+   * @returns Array of search results with message IDs, session IDs, and similarity scores
+   */
+  async searchSimilarMessages(
     params: VectorStoreSearchParams
   ): Promise<VectorStoreSearchResult[]> {
     const {
       queryVector,
       topK,
-      candidateLimit = 500,
       excludeSessionId,
+      minScore = 0,
     } = params;
 
     if (queryVector.length === 0 || topK <= 0) return [];
 
-    const embeddings = await prisma.messageEmbedding.findMany({
-      where: excludeSessionId
-        ? {
-            sessionId: {
-              not: excludeSessionId,
-            },
-          }
-        : undefined,
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: candidateLimit,
-    });
+    // Convert vector to safe pgvector format with validation
+    const vectorString = toPgVectorString(queryVector);
 
-    const scored: VectorStoreSearchResult[] = [];
-    for (const emb of embeddings) {
-      const vector = parseVector(emb.vector);
-      if (vector.length === 0) continue;
-      const score = cosineSimilarity(queryVector, vector);
-      if (score > 0) {
-        scored.push({ messageId: emb.messageId, sessionId: emb.sessionId, score });
-      }
-    }
+    // Use pgvector's <=> operator for cosine distance
+    // Note: pgvector returns distance (0 = identical, 2 = opposite)
+    // Convert to similarity score: 1 - (distance / 2)
+    const results = await prisma.$queryRaw<
+      Array<{ message_id: number; session_id: string; distance: number }>
+    >`
+      SELECT
+        message_id,
+        session_id,
+        vector <=> ${vectorString}::vector as distance
+      FROM message_embeddings
+      WHERE ${excludeSessionId ? Prisma.sql`session_id != ${excludeSessionId}` : Prisma.sql`true`}
+      ORDER BY vector <=> ${vectorString}::vector
+      LIMIT ${topK * 2}
+    `;
 
-    return scored.sort((a, b) => b.score - a.score).slice(0, topK);
+    // Convert distance to similarity and filter by minScore
+    return results
+      .map((r) => ({
+        messageId: r.message_id,
+        sessionId: r.session_id,
+        score: 1 - r.distance / 2, // Convert cosine distance to similarity
+      }))
+      .filter((r) => r.score >= minScore)
+      .slice(0, topK);
   }
+
+  /**
+   * Search for similar memories using MemoryEmbedding with pgvector
+   * Typically used for retrieving user preferences/facts/constraints
+   *
+   * Note: This searches globally across all sessions. If multi-user support is needed,
+   * add userId field to schema and filter by it.
+   * @param params - Search parameters including query vector, topK, and minimum score threshold
+   * @returns Array of search results with memory IDs, session IDs, and similarity scores
+   */
+  async searchSimilarMemories(
+    params: VectorStoreSearchParams
+  ): Promise<MemorySearchResult[]> {
+    const {
+      queryVector,
+      topK,
+      minScore = 0.7, // Higher threshold for factual memories
+    } = params;
+
+    if (queryVector.length === 0 || topK <= 0) return [];
+
+    // Convert vector to safe pgvector format with validation
+    const vectorString = toPgVectorString(queryVector);
+
+    // Use pgvector's <=> operator for cosine distance
+    const results = await prisma.$queryRaw<
+      Array<{ memory_id: number; session_id: string; distance: number }>
+    >`
+      SELECT
+        memory_id,
+        session_id,
+        vector <=> ${vectorString}::vector as distance
+      FROM memory_embeddings
+      ORDER BY vector <=> ${vectorString}::vector
+      LIMIT ${topK * 2}
+    `;
+
+    // Convert distance to similarity and filter by minScore
+    return results
+      .map((r) => ({
+        memoryId: r.memory_id,
+        sessionId: r.session_id,
+        score: 1 - r.distance / 2, // Convert cosine distance to similarity
+      }))
+      .filter((r) => r.score >= minScore)
+      .slice(0, topK);
+  }
+
 }

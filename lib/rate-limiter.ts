@@ -9,6 +9,10 @@ interface RateLimitEntry {
   resetTime: number;
 }
 
+/**
+ * Rate limiter implementation using in-memory storage
+ * Tracks requests per identifier (IP or user ID) with configurable limits
+ */
 export class RateLimiter {
   private store: Map<string, RateLimitEntry> = new Map();
   private cleanupInterval: NodeJS.Timeout;
@@ -23,6 +27,8 @@ export class RateLimiter {
 
   /**
    * Check if request should be rate limited
+   * @param identifier - Unique identifier (IP address or user ID)
+   * @returns Rate limit check result with allowed status, remaining requests, and reset time
    */
   checkLimit(identifier: string): {
     allowed: boolean;
@@ -69,6 +75,9 @@ export class RateLimiter {
 
   /**
    * Get identifier from request (IP or user ID)
+   * @param request - HTTP request object
+   * @param userId - Optional user ID to use as identifier
+   * @returns Identifier string in format "user:{userId}" or "ip:{ipAddress}"
    */
   static getIdentifier(request: Request, userId?: string): string {
     if (userId) {
@@ -101,21 +110,16 @@ export class RateLimiter {
       }
     }
   }
-
-  /**
-   * Destroy the rate limiter
-   */
-  destroy(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-    }
-    this.store.clear();
-  }
 }
 
 // Singleton instance
 let rateLimiterInstance: RateLimiter | null = null;
 
+/**
+ * Gets or creates a singleton RateLimiter instance
+ * @param config - Rate limit configuration
+ * @returns Singleton RateLimiter instance
+ */
 export function getRateLimiter(config: RateLimitConfig): RateLimiter {
   if (!rateLimiterInstance) {
     rateLimiterInstance = new RateLimiter(config);
