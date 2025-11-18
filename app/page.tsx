@@ -20,6 +20,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
@@ -113,6 +114,7 @@ export default function ChatPage() {
     // Reset state for new session
     setMessages([]);
     setStreamingContent("");
+    setStreamingThinking("");
     setIsLoading(false);
 
     const loadHistory = async () => {
@@ -167,6 +169,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setStreamingContent("");
+    setStreamingThinking("");
 
     try {
       const response = await fetch("/api/chat", {
@@ -221,9 +224,11 @@ export default function ChatPage() {
                       role: "assistant",
                       content: accumulatedContent,
                       timestamp: new Date(),
+                      thinking: streamingThinking || undefined,
                     },
                   ]);
                   setStreamingContent("");
+                  setStreamingThinking("");
 
                   // Optimistically update current session in sidebar
                   setSessions((prev) =>
@@ -248,6 +253,9 @@ export default function ChatPage() {
                 // Parse JSON data
                 try {
                   const parsed = JSON.parse(data);
+                  if (parsed.thinking) {
+                    setStreamingThinking(parsed.thinking);
+                  }
                   if (parsed.content) {
                     accumulatedContent += parsed.content;
                     setStreamingContent(accumulatedContent);
@@ -298,6 +306,7 @@ export default function ChatPage() {
           messages={messages}
           isLoading={isLoading}
           streamingContent={streamingContent}
+          streamingThinking={streamingThinking}
         />
 
         <ChatInput isLoading={isLoading} onSubmit={sendMessage} />

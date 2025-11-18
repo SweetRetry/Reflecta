@@ -57,6 +57,10 @@ const ChatAgentStateAnnotation = Annotation.Root({
     reducer: (x, y) => y ?? x,
     default: () => "",
   }),
+  thinking: Annotation<string>({
+    reducer: (x, y) => y ?? x,
+    default: () => "",
+  }),
 });
 
 export type ChatAgentState = typeof ChatAgentStateAnnotation.State;
@@ -92,26 +96,44 @@ async function planTask(state: ChatAgentState): Promise<Partial<ChatAgentState>>
 
   const searchAvailable = isSearchAvailable();
 
-  const systemPrompt = `You are a task planning agent. Analyze the user's message to determine if external tools are needed.
+  const systemPrompt = `You are an intelligent task routing agent. Your job is to analyze user requests and determine the optimal approach.
 
-Available tools:
-1. **search**: Web search for real-time information, current events, or factual data${searchAvailable ? "" : " (currently unavailable - requires API key)"}
-2. **calculate**: Mathematical calculations or data processing
-3. **none**: Answer directly using your knowledge and provided context
+🔧 **Available Tools:**
 
-Guidelines:
-- Use "search" if the question requires${searchAvailable ? ":" : " (but check if API is configured first):"}
-  - Current/recent information (news, prices, weather, etc.)
-  - Specific factual data you're not confident about
-  - Real-time data or updates
-- Use "calculate" for:
-  - Math problems
-  - Data analysis
-- Use "none" for:
-  - General knowledge questions
-  - Creative writing
-  - Advice based on context
-  - Conversational responses${searchAvailable ? "" : "\n  - Questions requiring search (explain search is unavailable)"}`;
+1. **search** - Web search for real-time information${searchAvailable ? "" : " ⚠️ UNAVAILABLE (requires API key)"}
+2. **calculate** - Mathematical computation and data processing
+3. **none** - Direct response using knowledge and conversation context
+
+📋 **Decision Framework:**
+
+**Use "search" when:**
+- Current events, news, or time-sensitive information (e.g., "latest [technology] version", "today's weather")
+- Real-time data: stock prices, sports scores, exchange rates, cryptocurrency values
+- Specific facts you cannot verify from context (e.g., "population of [city] in [year]")
+- Technical documentation lookups for recent versions or features
+${searchAvailable ? "" : "- ⚠️ If search unavailable, use \"none\" and explain the limitation"}
+
+**Use "calculate" when:**
+- Mathematical operations: "What's X% of Y?", "Solve equation [equation]"
+- Data analysis: "Calculate average/sum/median of [numbers]"
+- Unit conversions with known formulas: "Convert [X units] to [Y units]"
+- Statistical computations: standard deviation, probability, etc.
+
+**Use "none" when:**
+- Questions answerable from conversation history/memories
+- General knowledge within your training data
+- Code explanations, debugging, or software architecture advice
+- Creative tasks: writing, brainstorming, design suggestions
+- Philosophical, ethical, or opinion-based questions
+- Conversational interactions: greetings, follow-ups, clarifications, emotional support
+${searchAvailable ? "" : "- Search-dependent queries when API is unavailable (explain this in reasoning)"}
+
+🎯 **Pro Tips:**
+- Check conversation context FIRST - user might have already provided the answer
+- When uncertain between "search" and "none", prefer "none" if you have reasonable knowledge
+- For multilingual queries, detect language and respond accordingly (tool choice remains the same)
+- Be conservative with "search" to avoid unnecessary API calls`;
+
 
   try {
     const modelWithStructure = model.withStructuredOutput(TaskPlanSchema, {
@@ -234,33 +256,108 @@ async function generateResponse(state: ChatAgentState): Promise<Partial<ChatAgen
   const model = getModelInstance(); // Normal temperature
 
   // Build system message with tool results
-  let systemContent = "You are a helpful AI assistant with access to the user's conversation history and extracted memories.";
+  let systemContent = `You are a knowledgeable and context-aware AI assistant. Your capabilities include:
+
+📚 **Memory & Context Access:**
+- Full conversation history: All previous messages in this session
+- Long-term memories: Key facts, preferences, and details about the user/project
+- Semantic context: Related discussions from other sessions (when relevant)
+
+🎯 **Response Guidelines:**
+1. **Contextual Awareness**: Always reference relevant history when answering questions about past conversations
+2. **Memory Integration**: Naturally incorporate user preferences and project details into your responses
+3. **Language Adaptation**: Match the user's language and communication style
+4. **Honesty**: If information isn't in the context or memories, say so clearly
+5. **Conciseness**: Be thorough but avoid unnecessary verbosity
+
+⚠️ **Critical**: When users ask about previous conversations, their preferences, or identity:
+- DO use the provided conversation history and memories
+- DO NOT claim lack of access to information that's clearly in your context
+- BE specific by referencing actual content from the history`;
 
   if (toolCall?.result && toolCall.tool !== "none") {
-    systemContent += `\n\nTool Result (${toolCall.tool}):\n${toolCall.result}`;
+    systemContent += `\n\n🔍 **Tool Result (${toolCall.tool}):**\n${toolCall.result}`;
   }
 
-  // Combine all messages
+  // Extract system messages from context and merge them
+  const contextSystemMessages = contextMessages.filter(
+    (msg) => msg instanceof SystemMessage
+  ) as SystemMessage[];
+  const contextNonSystemMessages = contextMessages.filter(
+    (msg) => !(msg instanceof SystemMessage)
+  );
+
+  const messagesSystemMessages = messages.filter(
+    (msg) => msg instanceof SystemMessage
+  ) as SystemMessage[];
+  const messagesNonSystem = messages.filter(
+    (msg) => !(msg instanceof SystemMessage)
+  );
+
+  // Merge all system message contents into one
+  for (const sysMsg of [...contextSystemMessages, ...messagesSystemMessages]) {
+    systemContent += `\n\n${sysMsg.content}`;
+  }
+
+  // Combine all messages with system message first, then non-system messages only
   const allMessages: BaseMessage[] = [
     new SystemMessage(systemContent),
-    ...contextMessages,
-    ...messages,
+    ...contextNonSystemMessages,
+    ...messagesNonSystem,
     new HumanMessage(currentMessage),
   ];
 
+  // Debug logging
+  console.log(`[Debug] Context: ${contextMessages.length} total (${contextSystemMessages.length} system, ${contextNonSystemMessages.length} non-system)`);
+  console.log(`[Debug] Messages: ${messages.length} total (${messagesSystemMessages.length} system, ${messagesNonSystem.length} non-system)`);
+  console.log(`[Debug] Final allMessages: ${allMessages.length} messages`);
+  console.log(`[Debug] System content preview: ${systemContent.substring(0, 500)}...`);
+
+  // Log context messages content for debugging
+  if (contextNonSystemMessages.length > 0) {
+    console.log(`[Debug] Context messages preview:`);
+    contextNonSystemMessages.slice(0, 2).forEach((msg, idx) => {
+      const preview = typeof msg.content === 'string'
+        ? msg.content.substring(0, 100)
+        : JSON.stringify(msg.content).substring(0, 100);
+      console.log(`  [${idx}] ${msg.constructor.name}: ${preview}...`);
+    });
+  }
+
   try {
     const response = await model.invoke(allMessages);
-    const finalResponse = typeof response.content === "string"
-      ? response.content
-      : JSON.stringify(response.content);
+
+    // Extract text and thinking content from response
+    let finalResponse: string;
+    let thinking: string = "";
+
+    if (typeof response.content === "string") {
+      finalResponse = response.content;
+    } else if (Array.isArray(response.content)) {
+      // Handle array of content blocks (e.g., thinking + text blocks)
+      const textBlocks = response.content
+        .filter((block: any) => block.type === "text")
+        .map((block: any) => block.text);
+      finalResponse = textBlocks.join("\n");
+
+      // Extract thinking blocks
+      const thinkingBlocks = response.content
+        .filter((block: any) => block.type === "thinking")
+        .map((block: any) => block.thinking);
+      thinking = thinkingBlocks.join("\n\n");
+    } else {
+      finalResponse = JSON.stringify(response.content);
+    }
 
     return {
       finalResponse,
+      thinking,
     };
   } catch (error) {
     console.error("Error generating response:", error);
     return {
       finalResponse: "I apologize, but I encountered an error generating a response. Please try again.",
+      thinking: "",
     };
   }
 }

@@ -15,25 +15,22 @@
  * - GET /api/chat?listSessions=true: List all sessions
  */
 
-import { ChatAnthropic } from "@langchain/anthropic";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { AIMessage } from "@langchain/core/messages";
 import { NextRequest, after } from "next/server";
 import { chatConfig } from "@/lib/chat-config";
 import { ChatValidator } from "@/lib/chat-validator";
 import { getRateLimiter, RateLimiter } from "@/lib/rate-limiter";
 import { MetricsCollector } from "@/lib/chat-metrics";
-import { ChatRequest, StreamChunk, ChatHistoryMessage, SessionSummary } from "@/lib/chat-types";
+import { StreamChunk, ChatHistoryMessage, SessionSummary } from "@/lib/chat-types";
 import {
-  buildMessagesWithMemory,
   processMemoryInBackground,
   getHistoryWithTimestamps,
-  getRecentSessions,
+  getRecentSessions
 } from "@/lib/chat-memory";
 import { countMessagesTokens } from "@/lib/token-manager";
 import { createChatAgentGraph } from "@/lib/agents/chat-agent-graph";
 import { getMemoryForSession } from "@/lib/chat-memory";
 import { searchRelevantContextEnhanced } from "@/lib/memory/memory-rag-enhanced";
-import { searchRelevantContext } from "@/lib/memory/memory-rag";
 
 // Initialize rate limiter
 let rateLimiter: RateLimiter;
@@ -164,6 +161,15 @@ export async function POST(req: NextRequest) {
           });
 
           accumulatedResponse = result.finalResponse;
+          const thinking = result.thinking || "";
+
+          // Stream thinking first (if available)
+          if (thinking) {
+            const thinkingData = createSSEData({ thinking });
+            controller.enqueue(encoder.encode(thinkingData));
+            // Small delay before streaming actual response
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
 
           // Stream the complete response
           // Split into chunks for progressive display
