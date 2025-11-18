@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Chat session model for tracking conversations
+model ChatSession {
+  id        String   @id // Using nanoid as session ID
+  title     String?  // Optional title for the session (first message or custom)
+  createdAt Int      @default(dbgenerated("(unixepoch())")) @map("created_at")
+  updatedAt Int      @default(dbgenerated("(unixepoch())")) @map("updated_at")
+
+  // Relations
+  messages  ChatMessage[]
+
+  @@index([updatedAt], name: "idx_updated_at")
+  @@map("chat_sessions")
+}
+
+// Chat message model for storing conversation messages
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  sessionId String   @map("session_id")
+  role      String   // "human" or "ai"
+  content   String
+  createdAt Int      @default(dbgenerated("(unixepoch())")) @map("created_at")
+
+  // Relation to session
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId], name: "idx_session_id")
+  @@index([sessionId, createdAt], name: "idx_session_created")
+  @@map("chat_messages")
+}
+

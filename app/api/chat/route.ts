@@ -14,6 +14,8 @@ import { ChatRequest, StreamChunk } from "@/lib/chat-types";
 import {
   buildMessagesWithMemory,
   saveToMemory,
+  getHistoryWithTimestamps,
+  getRecentSessions,
 } from "@/lib/chat-memory";
 
 // Initialize rate limiter
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest) {
     let requestData: unknown;
     try {
       requestData = await req.json();
-    } catch (_error) {
+    } catch {
       return createErrorResponse("Invalid JSON in request body", 400);
     }
 
@@ -290,17 +292,58 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * GET handler to retrieve API statistics (optional)
+ * GET handler to retrieve chat history or API statistics
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const sessionId = searchParams.get("sessionId");
+    const listSessions = searchParams.get("listSessions");
+
+    // If listSessions is true, return recent sessions
+    if (listSessions === "true") {
+      try {
+        const sessions = await getRecentSessions();
+        return new Response(JSON.stringify({ sessions }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error loading sessions:", error);
+        return createErrorResponse(
+          error instanceof Error ? error.message : "Failed to load sessions",
+          500
+        );
+      }
+    }
+
+    // If sessionId is provided, return chat history
+    if (sessionId) {
+      try {
+        const history = await getHistoryWithTimestamps(sessionId);
+
+        return new Response(JSON.stringify({ messages: history }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error loading history:", error);
+        return createErrorResponse(
+          error instanceof Error ? error.message : "Failed to load history",
+          500
+        );
+      }
+    }
+
+    // Otherwise, return API statistics
     const stats = MetricsCollector.getStatistics();
 
     return new Response(JSON.stringify(stats), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (_error) {
-    return createErrorResponse("Failed to retrieve statistics", 500);
+  } catch (error) {
+    console.error("GET handler error:", error);
+    return createErrorResponse("Failed to process request", 500);
   }
 }
