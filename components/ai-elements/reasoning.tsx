@@ -12,8 +12,6 @@ import type { ComponentProps } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Shimmer } from "./shimmer";
-import { CodeBlock, CodeBlockCopyButton } from "./code-block";
-import type { BundledLanguage } from "shiki";
 
 type ReasoningContextValue = {
   isStreaming: boolean;
@@ -170,34 +168,7 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <Streamdown
-        components={{
-          pre: ({ children, ...props }) => {
-            // Extract code and language from children
-            const child = Array.isArray(children) ? children[0] : children;
-            if (
-              child &&
-              typeof child === "object" &&
-              "props" in child &&
-              child.props
-            ) {
-              const { className, children: code } = child.props;
-              const language = className?.replace("language-", "") as BundledLanguage;
-              const codeText = typeof code === "string" ? code : String(code || "");
-
-              return (
-                <CodeBlock code={codeText} language={language || "typescript"}>
-                  <CodeBlockCopyButton />
-                </CodeBlock>
-              );
-            }
-            return <pre {...props}>{children}</pre>;
-          },
-        }}
-        {...props}
-      >
-        {children}
-      </Streamdown>
+      <Streamdown {...props}>{children}</Streamdown>
     </CollapsibleContent>
   )
 );
