@@ -72,6 +72,7 @@ async function extractFacts(state: MemoryState) {
     apiKey: chatConfig.getApiKey(),
     temperature: 0.1, // Low temperature for factual extraction
     maxRetries: 3, // Built-in retry with exponential backoff
+    streaming: false, // Explicitly disable streaming for background tasks
     ...(baseUrl && {
       configuration: {
         baseURL: baseUrl,
@@ -303,6 +304,7 @@ async function consolidateMemories(state: MemoryState) {
     apiKey: chatConfig.getApiKey(),
     temperature: 0.2,
     maxRetries: 1, // Reduced from 3 to save on retries
+    streaming: false, // Explicitly disable streaming for background tasks
     ...(baseUrl && {
       configuration: {
         baseURL: baseUrl,

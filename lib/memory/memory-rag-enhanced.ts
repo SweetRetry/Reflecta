@@ -234,6 +234,7 @@ async function compressContext(query: string, docs: BaseMessage[]): Promise<Base
       apiKey: chatConfig.getApiKey(),
       temperature: 0, // Zero temperature for factual extraction
       maxRetries: 1,
+      streaming: false, // Explicitly disable streaming for background tasks
       ...(baseUrl && {
         configuration: {
           baseURL: baseUrl,
