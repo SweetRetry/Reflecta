@@ -103,6 +103,7 @@ export interface RAGContext {
 export interface ChatHistoryMessage {
   role: "user" | "assistant";
   content: string;
+  thinking?: string;
   timestamp: number;
 }
 

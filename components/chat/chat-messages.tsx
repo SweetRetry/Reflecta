@@ -15,6 +15,7 @@ import { Loader } from "@/components/ai-elements/loader";
 import { Sparkles } from "lucide-react";
 import { ChatMessage } from "./types";
 import { motion, AnimatePresence } from "framer-motion";
+import { ThinkingDisplay } from "./thinking-display";
 
 interface ChatMessagesProps {
   messages: ChatMessage[];
@@ -77,15 +78,10 @@ export function ChatMessages({
                       </span>
                     </div>
                     {message.thinking && (
-                      <details className="mb-3 p-3 rounded-lg bg-muted/50 border border-border/50">
-                        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2">
-                          <span>💭 思考过程</span>
-                          <span className="text-[10px] opacity-60">(点击展开/收起)</span>
-                        </summary>
-                        <div className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono">
-                          {message.thinking}
-                        </div>
-                      </details>
+                      <ThinkingDisplay
+                        thinking={message.thinking}
+                        isStreaming={false}
+                      />
                     )}
                     <MessageResponse>{message.content}</MessageResponse>
                   </MessageContent>
@@ -134,14 +130,10 @@ export function ChatMessages({
                   </div>
                 </div>
                 {streamingThinking && (
-                  <details open className="mb-3 p-3 rounded-lg bg-muted/50 border border-border/50">
-                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2">
-                      <span>💭 思考中...</span>
-                    </summary>
-                    <div className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono">
-                      {streamingThinking}
-                    </div>
-                  </details>
+                  <ThinkingDisplay
+                    thinking={streamingThinking}
+                    isStreaming={true}
+                  />
                 )}
                 {streamingContent && (
                   <MessageResponse>{streamingContent}</MessageResponse>

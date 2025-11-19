@@ -10,6 +10,7 @@ interface MessagesResponse {
   messages: Array<{
     role: string;
     content: string;
+    thinking?: string;
     timestamp?: number;
   }>;
 }
@@ -38,6 +39,7 @@ export function useChatMessages(sessionId: string | null, enabled = true) {
       return (data.messages || []).map((msg) => ({
         role: msg.role as "user" | "assistant",
         content: msg.content,
+        thinking: msg.thinking,
         timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
       }));
     },

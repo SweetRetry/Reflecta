@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
           const agentGraph = createChatAgentGraph();
           
           // Use streamEvents to get real-time updates from the graph
-          const eventStream = await agentGraph.streamEvents(
+          const eventStream = agentGraph.streamEvents(
             {
               sessionId: chatRequest.sessionId!,
               currentMessage: chatRequest.message,
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
           );
 
           let finalResponse = "";
-          // let thinking = ""; // Thinking content is streamed directly but not stored for now
+          let thinking = ""; // Accumulate thinking content
 
           for await (const event of eventStream) {
             // Handle LLM streaming events
@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
                         });
                         controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
                       } else if (block.type === "thinking") {
-                        // thinking += block.thinking;
+                        thinking += block.thinking;
                         const sseChunk = JSON.stringify({
                           thinking: block.thinking,
                         });
@@ -188,7 +188,8 @@ export async function POST(req: NextRequest) {
                 await processMemoryInBackground(
                   chatRequest.sessionId!,
                   chatRequest.message,
-                  finalResponse
+                  finalResponse,
+                  thinking
                 );
               } catch (memoryError) {
                 console.error(

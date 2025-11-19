@@ -42,11 +42,13 @@ export async function getMemoryForSession(
  * @param sessionId - The session identifier
  * @param userMessage - The user's message content
  * @param assistantMessage - The assistant's response content
+ * @param thinking - Optional chain of thought content from the assistant
  */
 export async function saveToMemory(
   sessionId: string,
   userMessage: string,
-  assistantMessage: string
+  assistantMessage: string,
+  thinking?: string
 ): Promise<void> {
   const userMsg = ChatValidator.sanitizeMessage(userMessage);
   const aiMsg = ChatValidator.sanitizeMessage(assistantMessage);
@@ -84,7 +86,12 @@ export async function saveToMemory(
     }
 
     await tx.chatMessage.create({
-      data: { sessionId, role: "ai", content: aiMsg },
+      data: { 
+        sessionId, 
+        role: "ai", 
+        content: aiMsg,
+        thinking: thinking || null
+      },
     });
   });
 }
@@ -99,13 +106,14 @@ export async function getHistoryWithTimestamps(
 ): Promise<ChatHistoryMessage[]> {
   const messages = await prisma.chatMessage.findMany({
     where: { sessionId },
-    select: { role: true, content: true, createdAt: true },
+    select: { role: true, content: true, thinking: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
 
   return messages.map((msg) => ({
     role: msg.role === "human" ? "user" : "assistant",
     content: msg.content,
+    thinking: msg.thinking || undefined,
     timestamp: msg.createdAt.getTime(),
   }));
 }

@@ -12,14 +12,16 @@ import { createMemoryGraph } from "../agents/memory-graph";
  * @param sessionId - The session identifier
  * @param userMessage - The user's message content
  * @param assistantMessage - The assistant's response content
+ * @param thinking - Optional chain of thought content
  */
 export async function processMemoryInBackground(
   sessionId: string,
   userMessage: string,
-  assistantMessage: string
+  assistantMessage: string,
+  thinking?: string
 ): Promise<void> {
   // 1. Save raw conversation
-  await saveToMemory(sessionId, userMessage, assistantMessage);
+  await saveToMemory(sessionId, userMessage, assistantMessage, thinking);
 
   // 2. Trigger Memory Graph (Reflective Memory)
   try {
