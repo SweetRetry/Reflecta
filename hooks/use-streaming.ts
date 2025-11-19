@@ -100,6 +100,7 @@ export function useStreamingResponse(options: StreamingOptions = {}) {
 
                   // Handle title update event
                   if (parsed.event === "title-update" && parsed.title) {
+                    console.log("[SSE] Received title-update event:", parsed.title);
                     if (options.onTitleUpdate) {
                       options.onTitleUpdate(parsed.title);
                     }

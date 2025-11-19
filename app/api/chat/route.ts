@@ -178,28 +178,52 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Generate title for new sessions (synchronously before completion)
+          /**
+           * Title Generation Strategy: Non-blocking Wait Pattern
+           *
+           * Why this approach (vs. fully async after()):
+           * 1. User has already received all content (streaming complete)
+           * 2. Waiting for title doesn't block content reading
+           * 3. SSE push provides instant UI update (better UX than polling)
+           * 4. Timeout protection (5s) prevents indefinite waiting
+           *
+           * Flow:
+           * - Content streaming: DONE (user can read)
+           * - Title generation: ~1-2s (background)
+           * - SSE push: title-update event
+           * - Connection close: [DONE] + close()
+           *
+           * Trade-off: SSE connection stays open 1-5s longer, but no UI blocking
+           */
           if (isNew && finalResponse && chatRequest.sessionId) {
-            try {
-              const generatedTitle = await generateSessionTitle(
-                chatRequest.message,
-                finalResponse
-              );
-              await updateSessionTitle(chatRequest.sessionId, generatedTitle);
+            const titleGenerationPromise = (async () => {
+              try {
+                const generatedTitle = await generateSessionTitle(
+                  chatRequest.message,
+                  finalResponse
+                );
+                await updateSessionTitle(chatRequest.sessionId!, generatedTitle);
 
-              // Send title update event to frontend
-              const titleEvent = JSON.stringify({
-                event: "title-update",
-                title: generatedTitle,
-              });
-              controller.enqueue(encoder.encode(`data: ${titleEvent}\n\n`));
-            } catch (titleError) {
-              console.error("Error generating session title:", titleError);
-              // Continue even if title generation fails
-            }
+                // Send title update event to frontend via SSE
+                const titleEvent = JSON.stringify({
+                  event: "title-update",
+                  title: generatedTitle,
+                });
+                controller.enqueue(encoder.encode(`data: ${titleEvent}\n\n`));
+              } catch (titleError) {
+                console.error("Error generating session title:", titleError);
+                // Gracefully degrade: connection closes normally without title
+              }
+            })();
+
+            // Wait for title with timeout protection (max 5 seconds)
+            await Promise.race([
+              titleGenerationPromise,
+              new Promise((resolve) => setTimeout(resolve, 5000)),
+            ]);
           }
 
-          // Send completion marker
+          // Send completion marker and close stream
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
 

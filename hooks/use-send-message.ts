@@ -44,8 +44,14 @@ export function useSendMessage(
               messageCount: messages.length + 2, // +2 for user and assistant
             },
           });
+
+          // Refresh sessions from server for existing sessions
+          setTimeout(() => {
+            refetchSessions();
+          }, 500);
         } else {
-          // Add new session (with placeholder title, will be updated by onTitleUpdate)
+          // Add new session (with placeholder title)
+          // Title will be updated by onTitleUpdate callback when backend sends title-update event
           const firstUserMessage = messages.find((m) => m.role === "user");
           addSession({
             sessionId: currentSessionId,
@@ -53,17 +59,17 @@ export function useSendMessage(
             lastMessageTimestamp: Date.now(),
             messageCount: 2,
           });
-        }
 
-        // Refresh sessions from server
-        setTimeout(() => {
-          refetchSessions();
-        }, 500);
+          // Note: For new sessions, we don't refetch here because:
+          // 1. onTitleUpdate will trigger invalidateQueries which auto-refetches
+          // 2. This avoids a race condition where we fetch before title is generated
+        }
       }
     },
     onTitleUpdate: (title) => {
       // Update session title when received from backend
       if (!isTemporaryMode && currentSessionId) {
+        console.log(`[Title Update] Session ${currentSessionId}: "${title}"`);
         updateSession({
           sessionId: currentSessionId,
           updates: {
