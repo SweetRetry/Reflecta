@@ -14,6 +14,7 @@ export interface ChatRequest {
  */
 export interface StreamChunk {
   content?: string;
+  thinking?: string; // AI's thinking process (for extended thinking models)
   error?: string;
   metadata?: {
     model?: string;

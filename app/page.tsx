@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { nanoid } from "nanoid";
 import {
@@ -14,12 +14,13 @@ import {
   type ChatSession
 } from "@/components/chat";
 
-export default function ChatPage() {
+function ChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState("");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
@@ -32,7 +33,7 @@ export default function ChatPage() {
   const refreshSessions = async () => {
     setSessionsLoading(true);
     try {
-      const response = await fetch("/api/chat?listSessions=true");
+      const response = await fetch("/api/sessions");
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions || []);
@@ -74,7 +75,7 @@ export default function ChatPage() {
     const fetchSessions = async () => {
       setSessionsLoading(true);
       try {
-        const response = await fetch("/api/chat?listSessions=true");
+        const response = await fetch("/api/sessions");
         if (response.ok) {
           const data = await response.json();
           setSessions(data.sessions || []);
@@ -113,12 +114,13 @@ export default function ChatPage() {
     // Reset state for new session
     setMessages([]);
     setStreamingContent("");
+    setStreamingThinking("");
     setIsLoading(false);
 
     const loadHistory = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/chat?sessionId=${sessionId}`);
+        const response = await fetch(`/api/sessions/${sessionId}/messages`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -167,6 +169,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setStreamingContent("");
+    setStreamingThinking("");
 
     try {
       const response = await fetch("/api/chat", {
@@ -221,9 +224,11 @@ export default function ChatPage() {
                       role: "assistant",
                       content: accumulatedContent,
                       timestamp: new Date(),
+                      thinking: streamingThinking || undefined,
                     },
                   ]);
                   setStreamingContent("");
+                  setStreamingThinking("");
 
                   // Optimistically update current session in sidebar
                   setSessions((prev) =>
@@ -248,6 +253,9 @@ export default function ChatPage() {
                 // Parse JSON data
                 try {
                   const parsed = JSON.parse(data);
+                  if (parsed.thinking) {
+                    setStreamingThinking(parsed.thinking);
+                  }
                   if (parsed.content) {
                     accumulatedContent += parsed.content;
                     setStreamingContent(accumulatedContent);
@@ -298,10 +306,19 @@ export default function ChatPage() {
           messages={messages}
           isLoading={isLoading}
           streamingContent={streamingContent}
+          streamingThinking={streamingThinking}
         />
 
         <ChatInput isLoading={isLoading} onSubmit={sendMessage} />
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

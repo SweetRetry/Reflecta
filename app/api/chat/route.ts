@@ -2,34 +2,28 @@
  * Chat API Route - Production-Ready GPT-like Chatbot with Memory
  *
  * Features:
- * - Streaming responses with Server-Sent Events (SSE)
+ * - Streaming responses using Vercel AI SDK
  * - Long-term memory with RAG (Retrieval-Augmented Generation)
  * - Reflective memory extraction using LangGraph
  * - Smart token management and context window optimization
  * - Rate limiting and request metrics
  * - Comprehensive error handling
  *
- * Endpoints:
- * - POST /api/chat: Send a message and get streaming response
- * - GET /api/chat?sessionId={id}: Get chat history
- * - GET /api/chat?listSessions=true: List all sessions
+ * Endpoint:
+ * - POST /api/chat: Send a message and get a streaming response
  */
 
-import { ChatAnthropic } from "@langchain/anthropic";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { AIMessage } from "@langchain/core/messages";
 import { NextRequest, after } from "next/server";
 import { chatConfig } from "@/lib/chat-config";
 import { ChatValidator } from "@/lib/chat-validator";
 import { getRateLimiter, RateLimiter } from "@/lib/rate-limiter";
 import { MetricsCollector } from "@/lib/chat-metrics";
-import { ChatRequest, StreamChunk, ChatHistoryMessage, SessionSummary } from "@/lib/chat-types";
-import {
-  buildMessagesWithMemory,
-  processMemoryInBackground,
-  getHistoryWithTimestamps,
-  getRecentSessions,
-} from "@/lib/chat-memory";
+import { processMemoryInBackground } from "@/lib/chat-memory";
 import { countMessagesTokens } from "@/lib/token-manager";
+import { createChatAgentGraph } from "@/lib/agents/chat-agent-graph";
+import { getMemoryForSession } from "@/lib/chat-memory";
+import { searchRelevantContextEnhanced } from "@/lib/memory/memory-rag-enhanced";
 
 // Initialize rate limiter
 let rateLimiter: RateLimiter;
@@ -45,56 +39,11 @@ function createErrorResponse(message: string, status: number = 500): Response {
 }
 
 /**
- * Helper function to create SSE data
- */
-function createSSEData(chunk: StreamChunk): string {
-  return `data: ${JSON.stringify(chunk)}\n\n`;
-}
-
-/**
- * Build messages using LangChain memory
- * This function retrieves conversation history from memory and adds the current message
- */
-async function buildMessageHistory(
-  request: ChatRequest
-): Promise<Array<HumanMessage | AIMessage>> {
-  const { message, sessionId } = request;
-
-  if (!sessionId) {
-    throw new Error("sessionId is required for memory management");
-  }
-
-  // Build messages from memory (includes history + current message)
-  const messages = await buildMessagesWithMemory(sessionId, message);
-  return messages as Array<HumanMessage | AIMessage>;
-}
-
-/**
- * Initialize and get model instance
- */
-function getModelInstance(): ChatAnthropic {
-  const config = chatConfig.getModelConfig();
-  const baseUrl = chatConfig.getBaseUrl();
-
-  return new ChatAnthropic({
-    model: config.model,
-    maxTokens: config.maxTokens,
-    temperature: config.temperature,
-    topP: config.topP,
-    anthropicApiKey: chatConfig.getApiKey(),
-    ...(baseUrl && {
-      configuration: {
-        baseURL: baseUrl,
-      },
-    }),
-  });
-}
-
-/**
  * Main POST handler for chat requests
  */
 export async function POST(req: NextRequest) {
   let requestId: string | null = null;
+  const config = chatConfig.getModelConfig();
 
   try {
     // Validate configuration on first request
@@ -112,15 +61,8 @@ export async function POST(req: NextRequest) {
       rateLimiter = getRateLimiter(chatConfig.getRateLimitConfig());
     }
 
-    // Parse request body
-    let requestData: unknown;
-    try {
-      requestData = await req.json();
-    } catch {
-      return createErrorResponse("Invalid JSON in request body", 400);
-    }
-
-    // Validate request
+    // Parse and validate request body
+    const requestData = await req.json();
     const validation = ChatValidator.validateRequest(requestData);
     if (!validation.valid) {
       return createErrorResponse(
@@ -130,10 +72,7 @@ export async function POST(req: NextRequest) {
         400
       );
     }
-
     const chatRequest = validation.sanitized!;
-
-    // Validate sessionId is provided
     if (!chatRequest.sessionId) {
       return createErrorResponse("sessionId is required", 400);
     }
@@ -143,230 +82,170 @@ export async function POST(req: NextRequest) {
     const rateLimitResult = rateLimiter.checkLimit(identifier);
 
     if (!rateLimitResult.allowed) {
-      const retryAfter = Math.ceil(
-        (rateLimitResult.resetTime - Date.now()) / 1000
-      );
-      return new Response(
-        JSON.stringify({
-          error: "Rate limit exceeded",
-          retryAfter,
-        }),
-        {
-          status: 429,
-          headers: {
-            "Content-Type": "application/json",
-            "Retry-After": retryAfter.toString(),
-            "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Reset": new Date(
-              rateLimitResult.resetTime
-            ).toISOString(),
-          },
-        }
-      );
+      const retryAfter = Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000);
+      return new Response(JSON.stringify({ error: "Rate limit exceeded", retryAfter }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": retryAfter.toString(),
+        },
+      });
     }
 
     // Start metrics tracking
-    const config = chatConfig.getModelConfig();
     requestId = MetricsCollector.startRequest(config.model, chatRequest.userId);
 
-    // Initialize model
-    const model = getModelInstance();
+    // --- Streaming Logic using LangGraph and AI SDK v5 ---
 
-    // Build message history from memory
-    const messages = await buildMessageHistory(chatRequest);
+    // Get conversation history and context with enhanced RAG
+    const history = await getMemoryForSession(chatRequest.sessionId!);
+    const embeddingConfig = chatConfig.getEmbeddingConfig();
+    const contextMessages =
+      embeddingConfig.enabled && embeddingConfig.enableRag
+        ? await searchRelevantContextEnhanced(
+            chatRequest.sessionId!,
+            chatRequest.message
+          )
+        : [];
 
-    // Create streaming response
-    const stream = new ReadableStream({
+    // Create an SSE stream that processes LangGraph execution
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const encoder = new TextEncoder();
-        let tokensUsed = 0;
-
         try {
-          // Get streaming response from model
-          const streamResponse = await model.stream(messages);
-
-          let accumulatedResponse = "";
-
-          // Process chunks
-          for await (const chunk of streamResponse) {
-            const content = chunk.content;
-
-            // Handle string content
-            if (typeof content === "string" && content) {
-              accumulatedResponse += content;
-              const sseData = createSSEData({ content });
-              controller.enqueue(encoder.encode(sseData));
+          const agentGraph = createChatAgentGraph();
+          
+          // Use streamEvents to get real-time updates from the graph
+          const eventStream = await agentGraph.streamEvents(
+            {
+              sessionId: chatRequest.sessionId!,
+              currentMessage: chatRequest.message,
+              messages: history.slice(-10),
+              contextMessages,
+            },
+            {
+              version: "v2",
             }
-            // Handle array content
-            else if (Array.isArray(content)) {
-              for (const item of content) {
-                // Type guard for string items
-                const stringItem =
-                  typeof item === "object" && item !== null && "text" in item
-                    ? String(item.text)
-                    : typeof item === "string"
-                    ? item
-                    : null;
+          );
 
-                if (stringItem) {
-                  accumulatedResponse += stringItem;
-                  const sseData = createSSEData({ content: stringItem });
-                  controller.enqueue(encoder.encode(sseData));
+          let finalResponse = "";
+          // let thinking = ""; // Thinking content is streamed directly but not stored for now
+
+          for await (const event of eventStream) {
+            // Handle LLM streaming events
+            if (event.event === "on_chat_model_stream") {
+              // Check if this event is from the final response node
+              // We filter by node name to avoid streaming tool outputs or planning steps
+              if (event.metadata?.langgraph_node === "respond") {
+                const chunk = event.data.chunk;
+                
+                if (chunk.content) {
+                  // Handle text content
+                  if (typeof chunk.content === "string") {
+                    const content = chunk.content;
+                    finalResponse += content;
+                    
+                    const sseChunk = JSON.stringify({
+                      content: content,
+                    });
+                    controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
+                  } else if (Array.isArray(chunk.content)) {
+                    // Handle complex content (e.g. thinking blocks)
+                    for (const block of chunk.content) {
+                      if (block.type === "text") {
+                        finalResponse += block.text;
+                        const sseChunk = JSON.stringify({
+                          content: block.text,
+                        });
+                        controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
+                      } else if (block.type === "thinking") {
+                        // thinking += block.thinking;
+                        const sseChunk = JSON.stringify({
+                          thinking: block.thinking,
+                        });
+                        controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
+                      }
+                    }
+                  }
                 }
               }
             }
           }
 
-          // Calculate accurate token count after streaming completes
-          if (accumulatedResponse) {
-            const aiMessage = new AIMessage(accumulatedResponse);
-            tokensUsed = countMessagesTokens([aiMessage], config.model);
-          }
+          // Send completion marker
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
 
-          // Save conversation to memory asynchronously after response is sent
-          if (accumulatedResponse && chatRequest.sessionId) {
-            const sessionId = chatRequest.sessionId;
-            const message = chatRequest.message;
-            const response = accumulatedResponse;
+          // Post-response processing
+          if (finalResponse && chatRequest.sessionId) {
+            const tokensUsed = countMessagesTokens(
+              [new AIMessage(finalResponse)],
+              config.model
+            );
 
             after(async () => {
               try {
-                await processMemoryInBackground(sessionId, message, response);
+                await processMemoryInBackground(
+                  chatRequest.sessionId!,
+                  chatRequest.message,
+                  finalResponse
+                );
               } catch (memoryError) {
-                console.error("Error processing memory in background:", memoryError);
+                console.error(
+                  "Error processing memory in background:",
+                  memoryError
+                );
               }
             });
+
+            // Complete metrics tracking
+            if (requestId) {
+              MetricsCollector.completeRequest(requestId, tokensUsed);
+              MetricsCollector.logMetrics(requestId);
+            }
           }
-
-          // Send completion marker
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-
-          // Complete metrics tracking
-          if (requestId) {
-            MetricsCollector.completeRequest(requestId, tokensUsed);
-            MetricsCollector.logMetrics(requestId);
-          }
-
-          controller.close();
         } catch (error) {
-          console.error("Streaming error:", error);
-
-          // Send error through stream
+          console.error("Stream error:", error);
           const errorMessage =
-            error instanceof Error ? error.message : "Streaming error occurred";
-          const errorData = createSSEData({ error: errorMessage });
-          controller.enqueue(encoder.encode(errorData));
+            error instanceof Error ? error.message : "Unknown error";
+          const errorChunk = JSON.stringify({ error: errorMessage });
+          controller.enqueue(encoder.encode(`data: ${errorChunk}\n\n`));
+          controller.close();
 
-          // Track error in metrics
           if (requestId) {
-            MetricsCollector.completeRequest(
-              requestId,
-              tokensUsed,
-              errorMessage
-            );
+            MetricsCollector.completeRequest(requestId, 0, errorMessage);
             MetricsCollector.logMetrics(requestId);
           }
-
-          controller.close();
         }
       },
     });
 
-    // Return SSE response with proper headers
+    // Return SSE stream response
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
         "X-RateLimit-Remaining": rateLimitResult.remaining.toString(),
         "X-RateLimit-Reset": new Date(rateLimitResult.resetTime).toISOString(),
         "X-Request-ID": requestId || "unknown",
       },
     });
+
   } catch (error) {
     console.error("Chat API error:", error);
 
-    // Track error in metrics
+    // Track error in metrics if a request ID was generated
     if (requestId) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       MetricsCollector.completeRequest(requestId, 0, errorMessage);
       MetricsCollector.logMetrics(requestId);
     }
 
-    // Determine appropriate error response
     if (error instanceof Error) {
-      if (error.message.includes("API key")) {
-        return createErrorResponse("Authentication error", 401);
-      }
-      if (error.message.includes("timeout")) {
-        return createErrorResponse("Request timeout", 504);
-      }
-      return createErrorResponse(error.message, 500);
+        return createErrorResponse(error.message, 500);
     }
 
     return createErrorResponse("Internal server error", 500);
-  }
-}
-
-/**
- * GET handler to retrieve chat history, sessions list, or API statistics
- *
- * Query parameters:
- * - ?listSessions=true: Get all recent sessions
- * - ?sessionId={id}: Get chat history for a specific session
- * - (none): Get API statistics
- */
-export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get("sessionId");
-    const listSessions = searchParams.get("listSessions");
-
-    // If listSessions is true, return recent sessions
-    if (listSessions === "true") {
-      try {
-        const sessions: SessionSummary[] = await getRecentSessions();
-        return new Response(JSON.stringify({ sessions }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        console.error("Error loading sessions:", error);
-        return createErrorResponse(
-          error instanceof Error ? error.message : "Failed to load sessions",
-          500
-        );
-      }
-    }
-
-    // If sessionId is provided, return chat history
-    if (sessionId) {
-      try {
-        const history: ChatHistoryMessage[] = await getHistoryWithTimestamps(sessionId);
-
-        return new Response(JSON.stringify({ messages: history }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        console.error("Error loading history:", error);
-        return createErrorResponse(
-          error instanceof Error ? error.message : "Failed to load history",
-          500
-        );
-      }
-    }
-
-    // Otherwise, return API statistics
-    const stats = MetricsCollector.getStatistics();
-
-    return new Response(JSON.stringify(stats), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("GET handler error:", error);
-    return createErrorResponse("Failed to process request", 500);
   }
 }
