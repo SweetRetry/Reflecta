@@ -3,13 +3,13 @@
  *
  * This module provides a unified interface for chat memory operations including:
  * - Message storage and retrieval
- * - RAG-based context search
+ * - Enhanced RAG-based context search with dynamic thresholding and hybrid search
  * - Smart message building with token management
  * - Background memory processing with reflective memory extraction
  *
  * Architecture:
  * - memory-storage.ts: Database CRUD operations
- * - memory-rag.ts: Semantic search and context retrieval
+ * - memory-rag-enhanced.ts: Enhanced semantic + keyword hybrid search
  * - memory-builder.ts: Message construction with token management
  * - memory-processor.ts: Background processing with Memory Graph
  */
@@ -22,10 +22,10 @@ export {
   getRecentSessions,
 } from "./memory/memory-storage";
 
-// Re-export RAG operations
+// Re-export enhanced RAG operations
 export {
-  searchRelevantContext,
-} from "./memory/memory-rag";
+  searchRelevantContextEnhanced,
+} from "./memory/memory-rag-enhanced";
 
 // Re-export builder operations
 export {

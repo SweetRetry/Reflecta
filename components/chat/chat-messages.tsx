@@ -20,12 +20,14 @@ interface ChatMessagesProps {
   messages: ChatMessage[];
   isLoading: boolean;
   streamingContent: string;
+  streamingThinking?: string;
 }
 
 export function ChatMessages({
   messages,
   isLoading,
   streamingContent,
+  streamingThinking,
 }: ChatMessagesProps) {
   return (
     <Conversation className="flex-1 py-8">
@@ -74,6 +76,17 @@ export function ChatMessages({
                         })}
                       </span>
                     </div>
+                    {message.thinking && (
+                      <details className="mb-3 p-3 rounded-lg bg-muted/50 border border-border/50">
+                        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2">
+                          <span>💭 思考过程</span>
+                          <span className="text-[10px] opacity-60">(点击展开/收起)</span>
+                        </summary>
+                        <div className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono">
+                          {message.thinking}
+                        </div>
+                      </details>
+                    )}
                     <MessageResponse>{message.content}</MessageResponse>
                   </MessageContent>
                 </Message>
@@ -106,7 +119,7 @@ export function ChatMessages({
           </div>
         )}
 
-        {streamingContent && (
+        {(streamingContent || streamingThinking) && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
             <Message from="assistant">
               <MessageContent>
@@ -120,7 +133,19 @@ export function ChatMessages({
                     <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
                   </div>
                 </div>
-                <MessageResponse>{streamingContent}</MessageResponse>
+                {streamingThinking && (
+                  <details open className="mb-3 p-3 rounded-lg bg-muted/50 border border-border/50">
+                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2">
+                      <span>💭 思考中...</span>
+                    </summary>
+                    <div className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono">
+                      {streamingThinking}
+                    </div>
+                  </details>
+                )}
+                {streamingContent && (
+                  <MessageResponse>{streamingContent}</MessageResponse>
+                )}
               </MessageContent>
             </Message>
           </div>

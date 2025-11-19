@@ -53,10 +53,11 @@ type MemoryState = typeof MemoryStateAnnotation.State;
 /**
  * Node 1: Extract potential facts from the recent conversation
  * Uses structured output with retry logic for robustness
+ * Now includes existing memories as context to avoid redundancy and maintain consistency
  */
 async function extractFacts(state: MemoryState) {
   console.log("--- Memory Agent: Extracting Facts ---");
-  const { recentMessages } = state;
+  const { recentMessages, sessionId } = state;
 
   if (recentMessages.length === 0) {
     return { extractedFacts: [] };
@@ -78,24 +79,70 @@ async function extractFacts(state: MemoryState) {
     }),
   });
 
+  // Fetch existing memories to provide context
+  const existingMemories = await prisma.userMemory.findMany({
+    where: { sessionId },
+    orderBy: { updatedAt: "desc" },
+    take: 15, // Get recent 15 memories for context
+    select: { content: true, category: true, confidence: true },
+  });
+
+  // Format existing memories
+  const existingMemoriesText = existingMemories.length > 0
+    ? `\n\nEXISTING KNOWLEDGE about this user/project:\n${existingMemories
+        .map((m) => `- ${m.content} [${m.category || "fact"}, confidence: ${m.confidence?.toFixed(2) || "1.00"}]`)
+        .join("\n")}`
+    : "";
+
   // Format messages for context
   const conversationText = recentMessages
     .map((m) => `${m._getType()}: ${m.content}`)
     .join("\n");
 
-  const systemPrompt = `You are a Memory Extraction Agent. Your goal is to extract key facts, preferences, and constraints from the conversation that are worth remembering for the long term.
+  const systemPrompt = `You are a Memory Extraction Agent specialized in capturing meaningful, long-term information from conversations.
+${existingMemoriesText}
 
-  Focus on:
-  1. User preferences (e.g., "I like Python", "No SVG format")
-  2. Project details/constraints (e.g., "The project uses Next.js 14")
-  3. Personal facts (e.g., "My name is Alice")
+🎯 **What to Extract:**
 
-  Ignore:
-  1. Casual greetings ("Hello", "How are you")
-  2. Temporary context (e.g., "Debug this code snippet")
-  3. Questions the user asked (unless they reveal a preference)
+1. **User Preferences & Interests**
+   - Technology choices: "I prefer Python/TypeScript/React"
+   - Communication style: "I like detailed explanations" or "Keep it concise"
+   - Format preferences: "No SVG format", "Use TypeScript"
+   - Philosophical interests or recurring topics
 
-  If nothing is worth remembering, return an empty array.`;
+2. **Identity & Personal Context**
+   - Name, role, or identifier (e.g., "My name is [X]", "I'm a [role]")
+   - Project context and purpose (e.g., "Working on [project type]", "This is for [purpose]")
+   - Language preference (detect from consistent usage patterns)
+
+3. **Project Details & Constraints**
+   - Technical stack: "Using Next.js 14", "PostgreSQL database"
+   - Architecture decisions: "Following Clean Architecture", "Using microservices"
+   - Constraints: "Must support offline mode", "Need to handle 10k users"
+
+4. **Updates to Existing Knowledge**
+   - Version upgrades: "React 17" → "React 18"
+   - Preference changes: "Was using REST" → "Migrating to GraphQL"
+   - Clarifications or corrections to previous facts
+
+❌ **What to Ignore:**
+
+- Ephemeral greetings: "Hello", "你好", "How are you"
+- Temporary debugging context: "Check line 42", "This function has a bug"
+- Questions without revealed preferences: "How do I use X?" (unless it reveals interest)
+- Near-duplicates of existing memories (check similarity carefully)
+- Error messages or stack traces (unless they reveal a persistent issue)
+
+📝 **Output Format:**
+- Write facts in a clear, standalone format (someone reading it later should understand without conversation context)
+- Preserve original language context: Translate/adapt personal info to English if in another language (e.g., "我叫[名字]" → "User's name is [name]")
+- Be specific and actionable: Instead of vague "User likes frontend", write concrete "User prefers React for frontend development"
+- Use third-person perspective: "User prefers X", "Project uses Y", "Team decided Z"
+
+⚡ **Critical**:
+- Consider existing knowledge above - ONLY extract NEW or UPDATED information
+- If nothing new is worth remembering, return an empty array
+- Quality over quantity: 2-3 good facts > 10 redundant ones`;
 
   try {
     // Use structured output for guaranteed JSON format
@@ -255,19 +302,52 @@ async function consolidateMemories(state: MemoryState) {
 
   const newFactsText = extractedFacts.join("\n");
 
-  const systemPrompt = `You are a Memory Consolidation Agent. Your goal is to detect conflicts and redundancies between existing memories and new facts.
+  const systemPrompt = `You are a Memory Consolidation Agent specialized in detecting conflicts, updates, and redundancies between existing memories and new facts.
 
-  Conflicts include:
-  1. Direct contradictions (e.g., "User prefers Python" vs "User prefers JavaScript")
-  2. Updates to existing information (e.g., "Project uses Next.js 13" → "Project uses Next.js 14")
-  3. Redundant/duplicate information that should be merged
+🔍 **Types of Conflicts to Detect:**
 
-  For each conflict:
-  - Identify the old memory ID
-  - Provide the updated/merged content
-  - Explain your reasoning
+1. **Direct Contradictions** (Replace old with new)
+   - Example: "User prefers Python" vs "User switched to JavaScript"
+   - Action: Update the old memory to reflect the change
 
-  If no conflicts exist, return empty conflicts array and keep all new facts.`;
+2. **Version/Information Updates** (Update to latest)
+   - Example: "Project uses Next.js 13" → "Upgraded to Next.js 14"
+   - Action: Update the version number in existing memory
+
+3. **Redundant/Duplicate Information** (Merge or deduplicate)
+   - Example: "User likes React" + "User prefers React for frontend"
+   - Action: Keep the more specific one, discard the redundant one
+
+4. **Complementary Information** (Merge into richer fact)
+   - Example: "User is a developer" + "User specializes in backend [technology]"
+   - Action: Merge into "User is a backend developer specializing in [technology]"
+
+5. **Clarifications/Refinements** (Update with more precise info)
+   - Example: "Working on [project type]" → "Building [more detailed description]"
+   - Action: Update with the more detailed version
+
+❌ **NOT Conflicts:**
+- Different aspects of same topic (e.g., "Likes [language A]" + "Uses [language B] at work" → both valid)
+- Complementary preferences (e.g., "Prefers [style A]" + "Interested in [topic B]" → both keep)
+- Time-sequenced information without contradiction (e.g., "Asked about [topic X]" + "Also asked about [topic Y]" → both keep)
+
+📝 **Output Instructions:**
+
+For each conflict detected:
+- **oldMemoryId**: The ID from the existing memory (in format [ID: X])
+- **newContent**: The updated/merged text that resolves the conflict
+- **reasoning**: Clear explanation of why this is a conflict and how you resolved it
+
+For finalFacts:
+- Include ALL new facts that don't conflict with existing ones
+- Omit facts that were merged/resolved via conflict resolution
+
+⚡ **Critical Guidelines:**
+- Be conservative: Only mark as conflict if there's genuine contradiction/redundancy
+- Preserve information: When merging, don't lose important details
+- Match language: Keep the language consistent with existing memories (if existing is English, update in English)
+- Semantic similarity ≠ conflict: Similar topics can coexist if they provide different information`;
+
 
   try {
     const modelWithStructure = model.withStructuredOutput(ConsolidationSchema, {
