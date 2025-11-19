@@ -23,15 +23,18 @@ function rowToMessage(row: { role: string; content: string }): BaseMessage {
 /**
  * Retrieves all messages for a given session from the database
  * @param sessionId - The session identifier
+ * @param limit - Optional limit for number of messages to retrieve (gets most recent N messages)
  * @returns Array of BaseMessage objects ordered by creation time
  */
 export async function getMemoryForSession(
-  sessionId: string
+  sessionId: string,
+  limit?: number
 ): Promise<BaseMessage[]> {
   const messages = await prisma.chatMessage.findMany({
     where: { sessionId },
     select: { role: true, content: true },
     orderBy: { createdAt: "asc" },
+    ...(limit && { take: -limit }), // negative take gets last N items
   });
   return messages.map(rowToMessage);
 }
@@ -154,6 +157,7 @@ export async function isNewSession(sessionId: string): Promise<boolean> {
 
 /**
  * Updates the title of a chat session
+ * Creates the session if it doesn't exist (handles race conditions)
  * @param sessionId - The session identifier
  * @param title - The new title for the session
  */
@@ -161,8 +165,12 @@ export async function updateSessionTitle(
   sessionId: string,
   title: string
 ): Promise<void> {
-  await prisma.chatSession.update({
+  await prisma.chatSession.upsert({
     where: { id: sessionId },
-    data: { title: ChatValidator.sanitizeMessage(title) },
+    update: { title: ChatValidator.sanitizeMessage(title) },
+    create: {
+      id: sessionId,
+      title: ChatValidator.sanitizeMessage(title)
+    },
   });
 }

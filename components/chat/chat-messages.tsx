@@ -83,7 +83,13 @@ export function ChatMessages({
                         isStreaming={false}
                       />
                     )}
-                    <MessageResponse>{message.content}</MessageResponse>
+                    {message.role === "user" ? (
+                      <div className="whitespace-pre-wrap break-words">
+                        {message.content}
+                      </div>
+                    ) : (
+                      <MessageResponse>{message.content}</MessageResponse>
+                    )}
                   </MessageContent>
                 </Message>
               </motion.div>
@@ -91,7 +97,8 @@ export function ChatMessages({
           </AnimatePresence>
         </div>
 
-        {isLoading && !streamingContent && messages.length > 0 && (
+        {/* Show loading indicator only when loading but no streaming content yet */}
+        {isLoading && !streamingContent && !streamingThinking && messages.length > 0 && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
             <Message from="assistant">
               <MessageContent>
@@ -115,6 +122,7 @@ export function ChatMessages({
           </div>
         )}
 
+        {/* Show streaming content when available (this takes priority over loading indicator) */}
         {(streamingContent || streamingThinking) && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
             <Message from="assistant">

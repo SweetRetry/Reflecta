@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Clock, Sparkles } from "lucide-react";
+import { MessageCircle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatInput } from "@/components/chat";
 import { ConversationEmptyState } from "@/components/ai-elements/conversation";
@@ -57,7 +57,7 @@ export default function ChatPage() {
     <>
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-6 py-4 ">
-        <div />
+        <div className="text-xl font-bold">Reflecta</div>
         <div className="flex items-center gap-2">
           <Button
             variant={isTemporaryMode ? "default" : "ghost"}
@@ -66,7 +66,7 @@ export default function ChatPage() {
             className="rounded-xl transition-all duration-200"
             title={isTemporaryMode ? "切换到持久对话" : "切换到临时对话"}
           >
-            <Clock className="w-5 h-5" />
+            <MessageCircle className="w-5 h-5" />
           </Button>
         </div>
       </div>
@@ -86,7 +86,7 @@ export default function ChatPage() {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 bg-background w-3xl mx-auto px-6 pb-6">
+      <div className="shrink-0 bg-background max-w-3xl w-full mx-auto px-6 pb-6">
         <ChatInput isLoading={isLoading} onSubmit={handleSubmit} />
       </div>
     </>

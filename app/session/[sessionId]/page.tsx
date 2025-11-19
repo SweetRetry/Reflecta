@@ -105,7 +105,7 @@ export default function SessionPage() {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 bg-background w-3xl mx-auto px-6 pb-6">
+      <div className="shrink-0 bg-background max-w-3xl w-full mx-auto px-6 pb-6">
         <ChatInput isLoading={isLoading} onSubmit={handleSubmit} />
       </div>
     </>

@@ -16,9 +16,11 @@ import {
   PaperclipIcon,
   XIcon,
 } from "lucide-react";
-import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
+import type { ComponentProps, HTMLAttributes, ReactElement, ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
+import { CodeBlock, CodeBlockCopyButton } from "./code-block";
+import type { BundledLanguage } from "shiki";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -303,13 +305,57 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
+// Adapter component to convert react-markdown code props to CodeBlock props
+const CodeBlockAdapter = ({
+  className,
+  children,
+  inline,
+  ...props
+}: {
+  className?: string;
+  children?: ReactNode;
+  inline?: boolean;
+} & HTMLAttributes<HTMLElement>) => {
+  // Extract language from className (e.g., "language-typescript" -> "typescript")
+  const language = className?.replace(/language-/, "") || "plaintext";
+  
+  // Extract text content
+  const code = String(children || "").replace(/\n$/, "");
+
+  // Inline code
+  if (inline) {
+    return (
+      <code
+        className={cn(
+          "rounded bg-muted px-1.5 py-0.5 font-mono text-sm",
+          className
+        )}
+        {...props}
+      >
+        {code}
+      </code>
+    );
+  }
+
+  // Code block
+  return (
+    <CodeBlock code={code} language={language as BundledLanguage}>
+      <CodeBlockCopyButton />
+    </CodeBlock>
+  );
+};
+
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
+  ({ className, components, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
+      components={{
+        code: CodeBlockAdapter,
+        ...components,
+      }}
       {...props}
     />
   ),

@@ -23,12 +23,11 @@ export type ToolCall = {
   result?: string;
 };
 
-// Task planning schema
+// Task planning schema with defaults for better reliability
 const TaskPlanSchema = z.object({
-  needsTools: z.boolean().describe("Whether this task requires external tools"),
-  toolType: z.enum(["search", "calculate", "none"]).describe("Which tool to use"),
-  toolQuery: z.string().optional().describe("The query/expression for the tool"),
-  reasoning: z.string().describe("Why this approach was chosen"),
+  toolType: z.enum(["search", "calculate", "none"]).describe("Which tool to use: 'search' for web lookups, 'calculate' for math, 'none' for direct response"),
+  toolQuery: z.string().optional().describe("The search query or calculation expression (only if toolType is 'search' or 'calculate')"),
+  reasoning: z.string().default("Direct response").describe("Brief explanation of why this approach was chosen"),
 });
 
 // State definition
@@ -97,56 +96,49 @@ async function planTask(state: ChatAgentState): Promise<Partial<ChatAgentState>>
 
   const searchAvailable = isSearchAvailable();
 
-  const systemPrompt = `You are an intelligent task routing agent. Your job is to analyze user requests and determine the optimal approach.
+  const systemPrompt = `You are a task routing agent. Analyze the user's message and choose the appropriate tool.
 
-🔧 **Available Tools:**
+**Available Tools:**
+1. "search" - Web search for real-time information${searchAvailable ? "" : " (UNAVAILABLE - no API key)"}
+2. "calculate" - Mathematical computation
+3. "none" - Direct response using your knowledge
 
-1. **search** - Web search for real-time information${searchAvailable ? "" : " ⚠️ UNAVAILABLE (requires API key)"}
-2. **calculate** - Mathematical computation and data processing
-3. **none** - Direct response using knowledge and conversation context
+**Guidelines:**
+- Use "search" for: current events, real-time data, recent facts
+- Use "calculate" for: math operations, numerical computations
+- Use "none" for: general questions, code help, creative tasks, conversation
+${searchAvailable ? "" : "- Since search is unavailable, use \"none\" for search queries and explain the limitation"}
 
-📋 **Decision Framework:**
+**IMPORTANT:** You MUST return a JSON object with:
+- toolType: one of "search", "calculate", or "none"
+- toolQuery: the query/expression (only if using search or calculate)
+- reasoning: brief explanation of your choice
 
-**Use "search" when:**
-- Current events, news, or time-sensitive information (e.g., "latest [technology] version", "today's weather")
-- Real-time data: stock prices, sports scores, exchange rates, cryptocurrency values
-- Specific facts you cannot verify from context (e.g., "population of [city] in [year]")
-- Technical documentation lookups for recent versions or features
-${searchAvailable ? "" : "- ⚠️ If search unavailable, use \"none\" and explain the limitation"}
-
-**Use "calculate" when:**
-- Mathematical operations: "What's X% of Y?", "Solve equation [equation]"
-- Data analysis: "Calculate average/sum/median of [numbers]"
-- Unit conversions with known formulas: "Convert [X units] to [Y units]"
-- Statistical computations: standard deviation, probability, etc.
-
-**Use "none" when:**
-- Questions answerable from conversation history/memories
-- General knowledge within your training data
-- Code explanations, debugging, or software architecture advice
-- Creative tasks: writing, brainstorming, design suggestions
-- Philosophical, ethical, or opinion-based questions
-- Conversational interactions: greetings, follow-ups, clarifications, emotional support
-${searchAvailable ? "" : "- Search-dependent queries when API is unavailable (explain this in reasoning)"}
-
-🎯 **Pro Tips:**
-- Check conversation context FIRST - user might have already provided the answer
-- When uncertain between "search" and "none", prefer "none" if you have reasonable knowledge
-- For multilingual queries, detect language and respond accordingly (tool choice remains the same)
-- Be conservative with "search" to avoid unnecessary API calls`;
+Default to "none" if uncertain.`;
 
 
   try {
     const modelWithStructure = model.withStructuredOutput(TaskPlanSchema, {
       name: "plan_task",
+      includeRaw: false,
     });
 
     const result = await modelWithStructure.invoke([
       new SystemMessage(systemPrompt),
-      new HumanMessage(`User message: "${currentMessage}"\n\nWhat approach should we take?`),
+      new HumanMessage(`User message: "${currentMessage}"\n\nAnalyze and choose the appropriate tool.`),
     ]);
 
-    console.log(`Task Plan: ${result.toolType} - ${result.reasoning}`);
+    // Validate result
+    if (!result || !result.toolType) {
+      console.warn("Invalid task plan result, using fallback");
+      return {
+        toolCall: {
+          tool: "none",
+        },
+      };
+    }
+
+    console.log(`✓ Task Plan: ${result.toolType}${result.toolQuery ? ` (query: ${result.toolQuery.substring(0, 50)}...)` : ""}`);
 
     return {
       toolCall: {
@@ -155,8 +147,19 @@ ${searchAvailable ? "" : "- Search-dependent queries when API is unavailable (ex
       },
     };
   } catch (error) {
-    console.error("Error planning task:", error);
-    // Fallback: no tool
+    // Enhanced error logging for debugging
+    console.error("⚠️ Error planning task:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", {
+        name: error.name,
+        message: error.message,
+        // Log additional context if available
+        ...(error as any).llmOutput && { llmOutput: (error as any).llmOutput },
+      });
+    }
+
+    // Fallback: no tool (safe default)
+    console.log("→ Falling back to direct response (no tool)");
     return {
       toolCall: {
         tool: "none",

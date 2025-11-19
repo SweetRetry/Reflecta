@@ -27,8 +27,15 @@ import { searchRelevantContextEnhanced } from "@/lib/memory/memory-rag-enhanced"
 import { isNewSession, updateSessionTitle } from "@/lib/memory/memory-storage";
 import { generateSessionTitle } from "@/lib/title-generator";
 
-// Initialize rate limiter
-let rateLimiter: RateLimiter;
+// Validate configuration once at module initialization
+const configValidation = chatConfig.validateConfiguration();
+if (!configValidation.valid) {
+  console.error("Configuration errors:", configValidation.errors);
+  throw new Error(`Configuration error: ${configValidation.errors.join(", ")}`);
+}
+
+// Initialize rate limiter once at module initialization
+const rateLimiter = getRateLimiter(chatConfig.getRateLimitConfig());
 
 /**
  * Helper function to create error responses
@@ -48,21 +55,6 @@ export async function POST(req: NextRequest) {
   const config = chatConfig.getModelConfig();
 
   try {
-    // Validate configuration on first request
-    const configValidation = chatConfig.validateConfiguration();
-    if (!configValidation.valid) {
-      console.error("Configuration errors:", configValidation.errors);
-      return createErrorResponse(
-        `Configuration error: ${configValidation.errors.join(", ")}`,
-        500
-      );
-    }
-
-    // Initialize rate limiter if not already initialized
-    if (!rateLimiter) {
-      rateLimiter = getRateLimiter(chatConfig.getRateLimitConfig());
-    }
-
     // Parse and validate request body
     const requestData = await req.json();
     const validation = ChatValidator.validateRequest(requestData);
@@ -99,26 +91,25 @@ export async function POST(req: NextRequest) {
 
     // --- Streaming Logic using LangGraph and AI SDK v5 ---
 
-    // Get conversation history and context with enhanced RAG
-    const history = await getMemoryForSession(chatRequest.sessionId!);
-
-    // Check if this is a new session (for title generation)
-    const isNew = await isNewSession(chatRequest.sessionId!);
-
-    const embeddingConfig = chatConfig.getEmbeddingConfig();
-    const contextMessages =
-      embeddingConfig.enabled && embeddingConfig.enableRag
-        ? await searchRelevantContextEnhanced(
-            chatRequest.sessionId!,
-            chatRequest.message
-          )
-        : [];
-
     // Create an SSE stream that processes LangGraph execution
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
+          // Parallel database queries for optimal performance moved INSIDE stream
+          // This ensures TTFB (Time to First Byte) is instant, while data loading happens
+          // - history: limited to last 10 messages (reduces memory and improves performance)
+          // - isNew: check if session is new (for title generation)
+          // - contextMessages: RAG-based context search (only if enabled)
+          const embeddingConfig = chatConfig.getEmbeddingConfig();
+          const [history, isNew, contextMessages] = await Promise.all([
+            getMemoryForSession(chatRequest.sessionId!, 10), // Limit to last 10 messages
+            isNewSession(chatRequest.sessionId!),
+            embeddingConfig.enabled && embeddingConfig.enableRag
+              ? searchRelevantContextEnhanced(chatRequest.sessionId!, chatRequest.message)
+              : Promise.resolve([]),
+          ]);
+
           const agentGraph = createChatAgentGraph();
           
           // Use streamEvents to get real-time updates from the graph
@@ -126,7 +117,7 @@ export async function POST(req: NextRequest) {
             {
               sessionId: chatRequest.sessionId!,
               currentMessage: chatRequest.message,
-              messages: history.slice(-10),
+              messages: history, // Already limited to 10 messages in query
               contextMessages,
             },
             {

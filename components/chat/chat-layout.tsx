@@ -17,10 +17,7 @@ export function ChatLayout({ children }: { children: React.ReactNode }) {
 
   // React Query hooks
   const { sessions, isLoading: sessionsLoading } = useSessions();
-  const { clearMessages } = useChatMessages(
-    currentSessionId,
-    !isTemporaryMode
-  );
+  const { clearMessages } = useChatMessages(currentSessionId, !isTemporaryMode);
 
   const handleNewChat = () => {
     router.push("/", { scroll: false });

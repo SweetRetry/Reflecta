@@ -1,6 +1,6 @@
 "use client";
 
-import { Terminal, Plus, PanelLeft } from "lucide-react";
+import { Terminal, Plus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
@@ -17,8 +17,6 @@ import {
 } from "@/components/ui/sidebar";
 import { ChatSession } from "./types";
 import { formatRelativeTime } from "./utils";
-import { useState } from "react";
-import { cn } from "@/lib/utils";
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
@@ -37,28 +35,18 @@ export function ChatSidebar({
   onNewChat,
   onSelectSession,
 }: ChatSidebarProps) {
-  const { state, setOpen } = useSidebar();
-  const [isHoveringLogo, setIsHoveringLogo] = useState(false);
+  const { state } = useSidebar();
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-3 justify-between">
-          <div
-            className={cn(
-              "relative flex items-center justify-center w-10 h-10 rounded-xl bg-muted/50 shrink-0 transition-all duration-200",
-              state === "collapsed" && "cursor-pointer hover:bg-muted hover:text-primary"
-            )}
-            onClick={() => state === "collapsed" && setOpen(true)}
-            onMouseEnter={() => setIsHoveringLogo(true)}
-            onMouseLeave={() => setIsHoveringLogo(false)}
-          >
-            {state === "collapsed" && isHoveringLogo ? (
-              <PanelLeft className="w-5 h-5" />
-            ) : (
-              <Terminal className="w-5 h-5" />
-            )}
-          </div>
+          {state !== "collapsed" ? (
+            <Terminal className="w-5 h-5 ml-2" />
+          ) : (
+            <SidebarTrigger />
+          )}
+
           <SidebarTrigger className="group-data-[collapsible=icon]:hidden" />
         </div>
       </SidebarHeader>
@@ -71,8 +59,7 @@ export function ChatSidebar({
                 <SidebarMenuButton
                   onClick={onNewChat}
                   tooltip="新对话"
-                  className="w-full rounded-xl transition-all duration-200"
-                  size="default"
+                  className="rounded-xl transition-all duration-200"
                 >
                   <Plus className="w-5 h-5" />
                   <span>新对话</span>

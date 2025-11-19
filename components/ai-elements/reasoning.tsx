@@ -8,10 +8,12 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
-import type { ComponentProps } from "react";
+import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Shimmer } from "./shimmer";
+import { CodeBlock, CodeBlockCopyButton } from "./code-block";
+import type { BundledLanguage } from "shiki";
 
 type ReasoningContextValue = {
   isStreaming: boolean;
@@ -152,6 +154,41 @@ export const ReasoningTrigger = memo(
   }
 );
 
+// Adapter for code blocks in reasoning content
+const ReasoningCodeBlockAdapter = ({
+  className,
+  children,
+  inline,
+  ...props
+}: {
+  className?: string;
+  children?: ReactNode;
+  inline?: boolean;
+} & HTMLAttributes<HTMLElement>) => {
+  const language = className?.replace(/language-/, "") || "plaintext";
+  const code = String(children || "").replace(/\n$/, "");
+
+  if (inline) {
+    return (
+      <code
+        className={cn(
+          "rounded bg-muted px-1.5 py-0.5 font-mono text-sm",
+          className
+        )}
+        {...props}
+      >
+        {code}
+      </code>
+    );
+  }
+
+  return (
+    <CodeBlock code={code} language={language as BundledLanguage}>
+      <CodeBlockCopyButton />
+    </CodeBlock>
+  );
+};
+
 export type ReasoningContentProps = ComponentProps<
   typeof CollapsibleContent
 > & {
@@ -168,7 +205,14 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <Streamdown {...props}>{children}</Streamdown>
+      <Streamdown
+        components={{
+          code: ReasoningCodeBlockAdapter,
+        }}
+        {...props}
+      >
+        {children}
+      </Streamdown>
     </CollapsibleContent>
   )
 );
