@@ -183,7 +183,7 @@ ${existingMemoriesText}
           })
           .join("");
       } else {
-        content = response.content.toString();
+        content = JSON.stringify(response.content);
       }
 
       const jsonMatch = content.match(/\[[\s\S]*?\]/);

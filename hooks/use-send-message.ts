@@ -91,14 +91,23 @@ export function useSendMessage(
     async (text: string) => {
       if (!text.trim() || isStreaming) return;
 
-      // Create session ID if needed
-      let sessionId = currentSessionId;
-      if (!isTemporaryMode && !sessionId) {
-        sessionId = nanoid();
+      // In the simplified design, useSendMessage should only be called when
+      // we are already in the correct context (SessionPage) with a valid sessionId.
+      // However, for backward compatibility or edge cases, we keep some logic.
+      // But crucially, we don't need to handle navigation here anymore.
 
-        if (options.onSessionCreated) {
-          options.onSessionCreated(sessionId);
-        }
+      // Use current ID or generate one (though generate one is mostly for safety now)
+      let sessionId = currentSessionId;
+
+      // If we are somehow called without a session ID in non-temporary mode,
+      // it means we are likely in a state where we should have navigated but didn't.
+      // But with the new "deferred execution" flow, this hook is primarily used inside SessionPage
+      // where currentSessionId is always present.
+
+      if (!isTemporaryMode && !sessionId) {
+         console.warn("useSendMessage called without sessionId in persistent mode");
+         // Fallback: generate one, but this shouldn't happen in the new flow
+         sessionId = nanoid();
       }
 
       // Add user message
@@ -125,7 +134,19 @@ export function useSendMessage(
           };
 
       // Process streaming response
-      await processStream(endpoint, payload);
+      await processStream(endpoint, payload, {
+        onTitleUpdate: (title) => {
+          if (!isTemporaryMode && sessionId) {
+            console.log(`[Title Update] Session ${sessionId}: "${title}"`);
+            updateSession({
+              sessionId,
+              updates: {
+                title,
+              },
+            });
+          }
+        },
+      });
 
       if (options.onMessageSent) {
         options.onMessageSent();
@@ -139,6 +160,7 @@ export function useSendMessage(
       addMessage,
       processStream,
       options,
+      updateSession, // Added missing dependency
     ]
   );
 

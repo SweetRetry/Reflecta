@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { ChatMessages, ChatInput, ChatMessagesRef } from "@/components/chat";
 
@@ -23,6 +23,9 @@ export default function SessionPage() {
     isTemporaryMode,
     streamingContent,
     streamingThinking,
+    clearStreaming,
+    pendingMessage,
+    setPendingMessage,
   } = useChatStore();
 
   // React Query hooks
@@ -30,11 +33,29 @@ export default function SessionPage() {
   const { messages } = useChatMessages(currentSessionId, !isTemporaryMode);
 
   // Streaming and sending
-  const { sendMessage, isLoading } = useSendMessage(currentSessionId, messages, {
-    onSessionCreated: (newSessionId) => {
-      router.push(`/session/${newSessionId}`);
-    },
-  });
+
+  const { sendMessage, isLoading } = useSendMessage(
+    currentSessionId,
+    messages,
+    {
+      onSessionCreated: (newSessionId) => {
+        router.push(`/session/${newSessionId}`);
+      },
+    }
+  );
+  // Clear streaming state when session changes to prevent stale data
+  useEffect(() => {
+    clearStreaming();
+  }, [currentSessionId, clearStreaming]);
+
+  // Check for pending message from homepage
+  useEffect(() => {
+    if (pendingMessage) {
+      const messageToSend = pendingMessage;
+      setPendingMessage(null); // Clear it immediately to prevent double sends
+      sendMessage(messageToSend);
+    }
+  }, [pendingMessage, sendMessage, setPendingMessage]);
 
   const handleSubmit = async (messageData: { text: string }) => {
     await sendMessage(messageData.text);

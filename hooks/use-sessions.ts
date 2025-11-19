@@ -106,6 +106,52 @@ export function useSessions() {
     },
   });
 
+  // Delete session optimistically
+  const deleteSession = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const response = await fetch(`/api/sessions/${sessionId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to delete session");
+      }
+
+      return response.json();
+    },
+    onMutate: async (sessionId) => {
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: SESSIONS_QUERY_KEY });
+
+      // Snapshot the previous value
+      const previousSessions = queryClient.getQueryData<SessionsResponse>(
+        SESSIONS_QUERY_KEY
+      );
+
+      // Optimistically remove the session
+      if (previousSessions) {
+        queryClient.setQueryData<SessionsResponse>(SESSIONS_QUERY_KEY, {
+          sessions: previousSessions.sessions.filter(
+            (s) => s.sessionId !== sessionId
+          ),
+        });
+      }
+
+      return { previousSessions };
+    },
+    onError: (_err, _variables, context) => {
+      // Rollback on error
+      if (context?.previousSessions) {
+        queryClient.setQueryData(SESSIONS_QUERY_KEY, context.previousSessions);
+      }
+    },
+    onSettled: () => {
+      // Refetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
+    },
+  });
+
   return {
     sessions: data?.sessions ?? [],
     isLoading,
@@ -113,5 +159,6 @@ export function useSessions() {
     refetch,
     updateSession: updateSession.mutate,
     addSession: addSession.mutate,
+    deleteSession: deleteSession.mutateAsync,
   };
 }

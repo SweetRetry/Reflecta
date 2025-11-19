@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { useChatStore, ChatMessage } from "@/stores/chat-store";
 
 interface StreamingOptions {
@@ -11,8 +11,9 @@ interface StreamingOptions {
  * Custom hook to handle streaming chat responses
  */
 export function useStreamingResponse(options: StreamingOptions = {}) {
-  const [isStreaming, setIsStreaming] = useState(false);
   const {
+    isStreaming,
+    setIsStreaming,
     streamingContent,
     streamingThinking,
     setStreamingContent,
@@ -23,7 +24,12 @@ export function useStreamingResponse(options: StreamingOptions = {}) {
   const processStream = useCallback(
     async (
       endpoint: string,
-      payload: Record<string, unknown>
+      payload: Record<string, unknown>,
+      {
+        onTitleUpdate,
+      }: {
+        onTitleUpdate?: (title: string) => void;
+      } = {}
     ): Promise<ChatMessage | null> => {
       setIsStreaming(true);
       clearStreaming();
@@ -101,7 +107,9 @@ export function useStreamingResponse(options: StreamingOptions = {}) {
                   // Handle title update event
                   if (parsed.event === "title-update" && parsed.title) {
                     console.log("[SSE] Received title-update event:", parsed.title);
-                    if (options.onTitleUpdate) {
+                    if (onTitleUpdate) {
+                      onTitleUpdate(parsed.title);
+                    } else if (options.onTitleUpdate) {
                       options.onTitleUpdate(parsed.title);
                     }
                   }
@@ -168,6 +176,7 @@ export function useStreamingResponse(options: StreamingOptions = {}) {
       clearStreaming,
       setStreamingContent,
       setStreamingThinking,
+      setIsStreaming,
       options,
     ]
   );

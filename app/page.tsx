@@ -11,6 +11,8 @@ import { useChatStore } from "@/stores/chat-store";
 import { useChatMessages } from "@/hooks/use-chat";
 import { useSendMessage } from "@/hooks/use-send-message";
 
+import { nanoid } from "nanoid";
+
 export default function ChatPage() {
   const router = useRouter();
 
@@ -23,17 +25,14 @@ export default function ChatPage() {
     setIsTemporaryMode,
     clearStreaming,
     resetSession,
+    setPendingMessage,
   } = useChatStore();
 
   // React Query hooks
   const { messages, clearMessages } = useChatMessages(currentSessionId);
 
   // Streaming and sending
-  const { sendMessage, isLoading } = useSendMessage(currentSessionId, messages, {
-    onSessionCreated: (sessionId) => {
-      router.push(`/session/${sessionId}`);
-    },
-  });
+  const { isLoading } = useSendMessage(currentSessionId, messages);
 
   const handleToggleTemporaryMode = () => {
     const newMode = !isTemporaryMode;
@@ -49,7 +48,25 @@ export default function ChatPage() {
   };
 
   const handleSubmit = async (messageData: { text: string }) => {
-    await sendMessage(messageData.text);
+    if (!messageData.text.trim()) return;
+
+    if (isTemporaryMode) {
+      // Temporary mode handling (existing logic)
+      // Note: If temporary mode needs to support initial redirect too, we can adapt it.
+      // For now, let's assume temporary mode works within the same page or handles its own logic?
+      // Wait, temporary mode in original code was also navigating?
+      // Actually, temporary mode usually stays on the same page or uses a specific route.
+      // Looking at useSendMessage, temporary mode uses /api/chat/temporary.
+      // Let's stick to the plan:
+      // For normal mode: generate ID -> setPendingMessage -> navigate
+      const sessionId = nanoid();
+      setPendingMessage(messageData.text);
+      router.push(`/session/${sessionId}`);
+    } else {
+      const sessionId = nanoid();
+      setPendingMessage(messageData.text);
+      router.push(`/session/${sessionId}`);
+    }
   };
 
   return (

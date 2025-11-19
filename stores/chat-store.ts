@@ -30,13 +30,17 @@ export interface ChatMessage {
 interface ChatState {
   // UI state (transient)
   isTemporaryMode: boolean;
+  isStreaming: boolean;
   streamingContent: string;
   streamingThinking: string;
+  pendingMessage: string | null;
 
   // Actions
   setIsTemporaryMode: (mode: boolean) => void;
+  setIsStreaming: (isStreaming: boolean) => void;
   setStreamingContent: (content: string) => void;
   setStreamingThinking: (thinking: string) => void;
+  setPendingMessage: (message: string | null) => void;
   clearStreaming: () => void;
   resetSession: () => void;
 }
@@ -44,12 +48,17 @@ interface ChatState {
 export const useChatStore = create<ChatState>()((set) => ({
   // Initial state
   isTemporaryMode: false,
+  isStreaming: false,
   streamingContent: "",
   streamingThinking: "",
+  pendingMessage: null,
 
   // Actions
   setIsTemporaryMode: (mode) =>
     set({ isTemporaryMode: mode }),
+
+  setIsStreaming: (isStreaming) =>
+    set({ isStreaming }),
 
   setStreamingContent: (content) =>
     set({ streamingContent: content }),
@@ -57,13 +66,18 @@ export const useChatStore = create<ChatState>()((set) => ({
   setStreamingThinking: (thinking) =>
     set({ streamingThinking: thinking }),
 
+  setPendingMessage: (message) =>
+    set({ pendingMessage: message }),
+
   clearStreaming: () =>
-    set({ streamingContent: "", streamingThinking: "" }),
+    set({ streamingContent: "", streamingThinking: "", isStreaming: false }),
 
   resetSession: () =>
     set({
       isTemporaryMode: false,
       streamingContent: "",
-      streamingThinking: ""
+      streamingThinking: "",
+      isStreaming: false,
+      pendingMessage: null,
     }),
 }));
