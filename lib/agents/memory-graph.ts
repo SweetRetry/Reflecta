@@ -170,7 +170,21 @@ ${existingMemoriesText}
         ),
       ]);
 
-      const content = response.content.toString();
+      let content = "";
+      if (typeof response.content === "string") {
+        content = response.content;
+      } else if (Array.isArray(response.content)) {
+        content = response.content
+          .map((block) => {
+            if (typeof block === "string") return block;
+            if (block.type === "text") return block.text;
+            return "";
+          })
+          .join("");
+      } else {
+        content = response.content.toString();
+      }
+
       const jsonMatch = content.match(/\[[\s\S]*?\]/);
       if (jsonMatch) {
         const facts = JSON.parse(jsonMatch[0]);

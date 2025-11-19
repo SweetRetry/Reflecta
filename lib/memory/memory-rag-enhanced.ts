@@ -258,7 +258,20 @@ Rules:
       new HumanMessage(`User Query: "${query}"\n\nDocuments:\n${contextText}`),
     ]);
 
-    const compressedContent = response.content.toString();
+    let compressedContent = "";
+    if (typeof response.content === "string") {
+      compressedContent = response.content;
+    } else if (Array.isArray(response.content)) {
+      compressedContent = response.content
+        .map((block) => {
+          if (typeof block === "string") return block;
+          if (block.type === "text") return block.text;
+          return "";
+        })
+        .join("");
+    } else {
+      compressedContent = response.content.toString();
+    }
     
     console.log(`[Context Compression] Compression complete. Length: ${contextText.length} -> ${compressedContent.length} chars`);
 
