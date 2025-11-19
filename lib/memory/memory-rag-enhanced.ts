@@ -38,21 +38,21 @@ function analyzeQueryComplexity(query: string): {
   if (tokenCount <= 5) {
     // Simple queries (e.g., "how to install?")
     complexity = "simple";
-    semanticThreshold = 0.65; // Higher threshold for precision
-    keywordThreshold = 0.1;
-    maxResults = 3;
+    semanticThreshold = 0.78; // Very high threshold for simple queries to avoid noise
+    keywordThreshold = 0.15;
+    maxResults = 2; // Reduced results count
   } else if (tokenCount <= 15) {
     // Medium queries (e.g., "explain the difference between X and Y")
     complexity = "medium";
-    semanticThreshold = 0.60; // Balanced
-    keywordThreshold = 0.05;
-    maxResults = 5;
+    semanticThreshold = 0.75; // High threshold
+    keywordThreshold = 0.1;
+    maxResults = 4;
   } else {
     // Complex queries (e.g., detailed questions with multiple clauses)
     complexity = "complex";
-    semanticThreshold = 0.55; // Lower threshold for recall
-    keywordThreshold = 0.03;
-    maxResults = 7;
+    semanticThreshold = 0.72; // Still relatively high
+    keywordThreshold = 0.08;
+    maxResults = 6;
   }
 
   return {
@@ -187,18 +187,18 @@ async function searchMemories(
 ): Promise<string[]> {
   const vectorString = toPgVectorString(vector);
 
-  const results = await prisma.$queryRaw<
-    Array<{
-      content: string;
-      score: number;
-    }>
-  >`
+    const results = await prisma.$queryRaw<
+      Array<{
+        content: string;
+        score: number;
+      }>
+    >`
     SELECT
       um.content,
       1 - (me.vector <=> ${vectorString}::vector) / 2 AS score
     FROM memory_embeddings me
     JOIN user_memories um ON um.id = me.memory_id
-    WHERE (1 - (me.vector <=> ${vectorString}::vector) / 2) >= 0.70
+    WHERE (1 - (me.vector <=> ${vectorString}::vector) / 2) >= 0.80
     ORDER BY me.vector <=> ${vectorString}::vector
     LIMIT ${maxResults}
   `;
@@ -271,7 +271,7 @@ Rules:
         })
         .join("");
     } else {
-      compressedContent = response.content.toString();
+      compressedContent = JSON.stringify(response.content);
     }
     
     console.log(`[Context Compression] Compression complete. Length: ${contextText.length} -> ${compressedContent.length} chars`);
