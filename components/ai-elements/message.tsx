@@ -22,6 +22,8 @@ import {
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
+import { CodeBlock, CodeBlockCopyButton } from "./code-block";
+import type { BundledLanguage } from "shiki";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -313,6 +315,29 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
+      components={{
+        pre: ({ children, ...props }) => {
+          // Extract code and language from children
+          const child = Array.isArray(children) ? children[0] : children;
+          if (
+            child &&
+            typeof child === "object" &&
+            "props" in child &&
+            child.props
+          ) {
+            const { className, children: code } = child.props;
+            const language = className?.replace("language-", "") as BundledLanguage;
+            const codeText = typeof code === "string" ? code : String(code || "");
+
+            return (
+              <CodeBlock code={codeText} language={language || "typescript"}>
+                <CodeBlockCopyButton />
+              </CodeBlock>
+            );
+          }
+          return <pre {...props}>{children}</pre>;
+        },
+      }}
       {...props}
     />
   ),
