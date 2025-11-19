@@ -33,7 +33,7 @@ export default function ChatPage() {
   const refreshSessions = async () => {
     setSessionsLoading(true);
     try {
-      const response = await fetch("/api/chat?listSessions=true");
+      const response = await fetch("/api/sessions");
       if (response.ok) {
         const data = await response.json();
         setSessions(data.sessions || []);
@@ -75,7 +75,7 @@ export default function ChatPage() {
     const fetchSessions = async () => {
       setSessionsLoading(true);
       try {
-        const response = await fetch("/api/chat?listSessions=true");
+        const response = await fetch("/api/sessions");
         if (response.ok) {
           const data = await response.json();
           setSessions(data.sessions || []);
@@ -120,7 +120,7 @@ export default function ChatPage() {
     const loadHistory = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/chat?sessionId=${sessionId}`);
+        const response = await fetch(`/api/sessions/${sessionId}/messages`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
