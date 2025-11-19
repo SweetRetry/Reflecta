@@ -5,9 +5,11 @@
  * - Dynamic similarity thresholds based on query complexity
  * - Hybrid search (semantic + keyword matching)
  * - Improved relevance scoring
+ * - Context Compression (filtering and summarization)
  */
 
 import { BaseMessage, HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
+import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatValidator } from "../chat-validator";
 import { chatConfig } from "../chat-config";
 import { prisma } from "../prisma";
@@ -207,6 +209,64 @@ async function searchMemories(
 }
 
 /**
+ * Compresses context by extracting only relevant information using a lightweight LLM
+ */
+async function compressContext(query: string, docs: BaseMessage[]): Promise<BaseMessage[]> {
+  // If few documents, skip compression to save latency
+  if (docs.length < 2) {
+    return docs;
+  }
+
+  console.log(`[Context Compression] Compressing ${docs.length} documents...`);
+
+  try {
+    const config = chatConfig.getModelConfig();
+    const baseUrl = chatConfig.getBaseUrl();
+
+    // Use a lightweight model instance (or same model with lower temp)
+    const model = new ChatAnthropic({
+      model: config.model,
+      apiKey: chatConfig.getApiKey(),
+      temperature: 0, // Zero temperature for factual extraction
+      maxRetries: 1,
+      ...(baseUrl && {
+        configuration: {
+          baseURL: baseUrl,
+        },
+      }),
+    });
+
+    const contextText = docs
+      .map((d, i) => `[Document ${i + 1}]: ${d.content}`)
+      .join("\n\n");
+
+    const systemPrompt = `You are a Context Compression Agent. Your task is to extract ONLY the sentences or facts from the provided documents that are directly relevant to answering the user's query.
+    
+Rules:
+1. Keep the extracted information verbatim or close to original.
+2. If a document has no relevant information, ignore it.
+3. Do not add your own knowledge or opinions.
+4. Output the result as a concise list of relevant facts/sentences.`;
+
+    const response = await model.invoke([
+      new SystemMessage(systemPrompt),
+      new HumanMessage(`User Query: "${query}"\n\nDocuments:\n${contextText}`),
+    ]);
+
+    const compressedContent = response.content.toString();
+    
+    console.log(`[Context Compression] Compression complete. Length: ${contextText.length} -> ${compressedContent.length} chars`);
+
+    // Return as a single system message containing the compressed context
+    return [new SystemMessage(`Relevant Context (Compressed):\n${compressedContent}`)];
+  } catch (error) {
+    console.error("[Context Compression] Failed:", error);
+    // Fallback: return original docs
+    return docs;
+  }
+}
+
+/**
  * Main enhanced RAG search with dynamic thresholding and hybrid search
  *
  * @param sessionId - The current session identifier (excluded from message search)
@@ -252,7 +312,7 @@ export async function searchRelevantContextEnhanced(
     ]);
 
     // Combine results
-    const contextMessages: BaseMessage[] = [];
+    let contextMessages: BaseMessage[] = [];
 
     if (memories.length > 0) {
       const memoryText = memories.map((m) => `- ${m}`).join("\n");
@@ -264,8 +324,13 @@ export async function searchRelevantContextEnhanced(
     contextMessages.push(...messages);
 
     console.log(
-      `[RAG] Total context: ${memories.length} memories + ${messages.length} messages`
+      `[RAG] Total context before compression: ${memories.length} memories + ${messages.length} messages`
     );
+
+    // Apply Context Compression
+    if (contextMessages.length > 0) {
+      contextMessages = await compressContext(sanitized, contextMessages);
+    }
 
     return contextMessages;
   } catch (error) {

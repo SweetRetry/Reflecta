@@ -58,6 +58,9 @@ model MessageEmbedding {
 
   @@index([sessionId, createdAt], name: "idx_embedding_session_created")
   @@index([messageId], name: "idx_embedding_message")
+  // HNSW index for fast approximate nearest neighbor search
+  // Note: Using raw SQL migration for HNSW index creation as Prisma schema support is limited
+  // @@index([vector], name: "idx_message_embedding_vector", type: Hnsw)
   @@map("message_embeddings")
 }
 
@@ -98,6 +101,8 @@ model MemoryEmbedding {
 
   @@index([sessionId, createdAt], name: "idx_memory_embedding_session_created")
   @@index([memoryId], name: "idx_memory_embedding_memory")
+  // HNSW index for fast approximate nearest neighbor search
+  // Note: Using raw SQL migration for HNSW index creation as Prisma schema support is limited
+  // @@index([vector], name: "idx_memory_embedding_vector", type: Hnsw)
   @@map("memory_embeddings")
 }
-

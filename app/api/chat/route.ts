@@ -115,37 +115,60 @@ export async function POST(req: NextRequest) {
         try {
           const agentGraph = createChatAgentGraph();
           
-          // Invoke the agent graph to get the response
-          const result = await agentGraph.invoke({
-            sessionId: chatRequest.sessionId!,
-            currentMessage: chatRequest.message,
-            messages: history.slice(-10),
-            contextMessages,
-          });
+          // Use streamEvents to get real-time updates from the graph
+          const eventStream = await agentGraph.streamEvents(
+            {
+              sessionId: chatRequest.sessionId!,
+              currentMessage: chatRequest.message,
+              messages: history.slice(-10),
+              contextMessages,
+            },
+            {
+              version: "v2",
+            }
+          );
 
-          const finalResponse = result.finalResponse || "";
-          const thinking = result.thinking || "";
+          let finalResponse = "";
+          // let thinking = ""; // Thinking content is streamed directly but not stored for now
 
-          // Stream the response token by token (simulate streaming)
-          // Split by words and stream with small delays for better UX
-          const words = finalResponse.split(/(\s+)/);
-          let currentIndex = 0;
-
-          for (const word of words) {
-            if (word.trim()) {
-              // Format as SSE chunk
-              const chunk = JSON.stringify({
-                content: word,
-                thinking: currentIndex === 0 ? thinking : undefined,
-              });
-              controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
-              currentIndex++;
-              
-              // Small delay to simulate streaming (optional)
-              await new Promise((resolve) => setTimeout(resolve, 10));
-            } else {
-              // Include whitespace
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: word })}\n\n`));
+          for await (const event of eventStream) {
+            // Handle LLM streaming events
+            if (event.event === "on_chat_model_stream") {
+              // Check if this event is from the final response node
+              // We filter by node name to avoid streaming tool outputs or planning steps
+              if (event.metadata?.langgraph_node === "respond") {
+                const chunk = event.data.chunk;
+                
+                if (chunk.content) {
+                  // Handle text content
+                  if (typeof chunk.content === "string") {
+                    const content = chunk.content;
+                    finalResponse += content;
+                    
+                    const sseChunk = JSON.stringify({
+                      content: content,
+                    });
+                    controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
+                  } else if (Array.isArray(chunk.content)) {
+                    // Handle complex content (e.g. thinking blocks)
+                    for (const block of chunk.content) {
+                      if (block.type === "text") {
+                        finalResponse += block.text;
+                        const sseChunk = JSON.stringify({
+                          content: block.text,
+                        });
+                        controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
+                      } else if (block.type === "thinking") {
+                        // thinking += block.thinking;
+                        const sseChunk = JSON.stringify({
+                          thinking: block.thinking,
+                        });
+                        controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
 

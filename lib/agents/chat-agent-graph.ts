@@ -9,7 +9,7 @@
  */
 
 import { StateGraph, Annotation, START, END } from "@langchain/langgraph";
-import { BaseMessage, HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { chatConfig } from "@/lib/chat-config";
 import { performWebSearch, formatSearchResults, isSearchAvailable } from "@/lib/tools/search-tool";
@@ -66,7 +66,7 @@ const ChatAgentStateAnnotation = Annotation.Root({
 export type ChatAgentState = typeof ChatAgentStateAnnotation.State;
 
 // --- Helper: Get model instance ---
-function getModelInstance(temperature: number = 0.7): ChatAnthropic {
+function getModelInstance(temperature: number = 0.7, streaming: boolean = false): ChatAnthropic {
   const config = chatConfig.getModelConfig();
   const baseUrl = chatConfig.getBaseUrl();
 
@@ -75,6 +75,7 @@ function getModelInstance(temperature: number = 0.7): ChatAnthropic {
     apiKey: chatConfig.getApiKey(),
     temperature,
     maxRetries: 2,
+    streaming,
     ...(baseUrl && {
       configuration: {
         baseURL: baseUrl,
@@ -248,12 +249,14 @@ async function executeCalculation(state: ChatAgentState): Promise<Partial<ChatAg
 // --- Node 4: Generate Response ---
 /**
  * Generates the final response using LLM with context and tool results
+ * Note: This node is now designed to be streamed directly
  */
 async function generateResponse(state: ChatAgentState): Promise<Partial<ChatAgentState>> {
   console.log("--- Chat Agent: Generating Response ---");
   const { messages, contextMessages, currentMessage, toolCall } = state;
 
-  const model = getModelInstance(); // Normal temperature
+  // Use streaming enabled model instance
+  const model = getModelInstance(0.7, true); 
 
   // Build system message with tool results
   let systemContent = `You are a knowledgeable and context-aware AI assistant. Your capabilities include:
@@ -313,18 +316,9 @@ async function generateResponse(state: ChatAgentState): Promise<Partial<ChatAgen
   console.log(`[Debug] Final allMessages: ${allMessages.length} messages`);
   console.log(`[Debug] System content preview: ${systemContent.substring(0, 500)}...`);
 
-  // Log context messages content for debugging
-  if (contextNonSystemMessages.length > 0) {
-    console.log(`[Debug] Context messages preview:`);
-    contextNonSystemMessages.slice(0, 2).forEach((msg, idx) => {
-      const preview = typeof msg.content === 'string'
-        ? msg.content.substring(0, 100)
-        : JSON.stringify(msg.content).substring(0, 100);
-      console.log(`  [${idx}] ${msg.constructor.name}: ${preview}...`);
-    });
-  }
-
   try {
+    // We return the model response directly. 
+    // When using .streamEvents() on the graph, this will yield chunks.
     const response = await model.invoke(allMessages);
 
     // Extract text and thinking content from response
