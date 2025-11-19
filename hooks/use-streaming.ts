@@ -4,6 +4,7 @@ import { useChatStore, ChatMessage } from "@/stores/chat-store";
 interface StreamingOptions {
   onComplete?: (message: ChatMessage) => void;
   onError?: (error: Error) => void;
+  onTitleUpdate?: (title: string) => void;
 }
 
 /**
@@ -96,6 +97,13 @@ export function useStreamingResponse(options: StreamingOptions = {}) {
                 // Parse JSON data
                 try {
                   const parsed = JSON.parse(data);
+
+                  // Handle title update event
+                  if (parsed.event === "title-update" && parsed.title) {
+                    if (options.onTitleUpdate) {
+                      options.onTitleUpdate(parsed.title);
+                    }
+                  }
 
                   if (parsed.thinking) {
                     accumulatedThinking += parsed.thinking;

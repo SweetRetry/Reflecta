@@ -139,3 +139,30 @@ export async function getRecentSessions(
     messageCount: s._count.messages,
   }));
 }
+
+/**
+ * Checks if a session is new (has no messages yet)
+ * @param sessionId - The session identifier
+ * @returns True if the session has no messages, false otherwise
+ */
+export async function isNewSession(sessionId: string): Promise<boolean> {
+  const messageCount = await prisma.chatMessage.count({
+    where: { sessionId },
+  });
+  return messageCount === 0;
+}
+
+/**
+ * Updates the title of a chat session
+ * @param sessionId - The session identifier
+ * @param title - The new title for the session
+ */
+export async function updateSessionTitle(
+  sessionId: string,
+  title: string
+): Promise<void> {
+  await prisma.chatSession.update({
+    where: { id: sessionId },
+    data: { title: ChatValidator.sanitizeMessage(title) },
+  });
+}

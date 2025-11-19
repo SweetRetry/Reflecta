@@ -45,7 +45,7 @@ export function useSendMessage(
             },
           });
         } else {
-          // Add new session
+          // Add new session (with placeholder title, will be updated by onTitleUpdate)
           const firstUserMessage = messages.find((m) => m.role === "user");
           addSession({
             sessionId: currentSessionId,
@@ -61,7 +61,18 @@ export function useSendMessage(
         }, 500);
       }
     },
-    onError: (error) => {
+    onTitleUpdate: (title) => {
+      // Update session title when received from backend
+      if (!isTemporaryMode && currentSessionId) {
+        updateSession({
+          sessionId: currentSessionId,
+          updates: {
+            title,
+          },
+        });
+      }
+    },
+    onError: (_error) => {
       // Add error message
       addMessage({
         role: "assistant",

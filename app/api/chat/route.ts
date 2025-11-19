@@ -24,6 +24,8 @@ import { countMessagesTokens } from "@/lib/token-manager";
 import { createChatAgentGraph } from "@/lib/agents/chat-agent-graph";
 import { getMemoryForSession } from "@/lib/chat-memory";
 import { searchRelevantContextEnhanced } from "@/lib/memory/memory-rag-enhanced";
+import { isNewSession, updateSessionTitle } from "@/lib/memory/memory-storage";
+import { generateSessionTitle } from "@/lib/title-generator";
 
 // Initialize rate limiter
 let rateLimiter: RateLimiter;
@@ -99,6 +101,10 @@ export async function POST(req: NextRequest) {
 
     // Get conversation history and context with enhanced RAG
     const history = await getMemoryForSession(chatRequest.sessionId!);
+
+    // Check if this is a new session (for title generation)
+    const isNew = await isNewSession(chatRequest.sessionId!);
+
     const embeddingConfig = chatConfig.getEmbeddingConfig();
     const contextMessages =
       embeddingConfig.enabled && embeddingConfig.enableRag
@@ -169,6 +175,27 @@ export async function POST(req: NextRequest) {
                   }
                 }
               }
+            }
+          }
+
+          // Generate title for new sessions (synchronously before completion)
+          if (isNew && finalResponse && chatRequest.sessionId) {
+            try {
+              const generatedTitle = await generateSessionTitle(
+                chatRequest.message,
+                finalResponse
+              );
+              await updateSessionTitle(chatRequest.sessionId, generatedTitle);
+
+              // Send title update event to frontend
+              const titleEvent = JSON.stringify({
+                event: "title-update",
+                title: generatedTitle,
+              });
+              controller.enqueue(encoder.encode(`data: ${titleEvent}\n\n`));
+            } catch (titleError) {
+              console.error("Error generating session title:", titleError);
+              // Continue even if title generation fails
             }
           }
 
