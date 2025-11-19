@@ -13,12 +13,15 @@ export async function generateSessionTitle(
 ): Promise<string> {
   try {
     // Create a lightweight model instance for title generation
+    // We explicitly disable streaming and thinking to ensure a simple text response
     const model = new ChatAnthropic({
       model: chatConfig.getModelConfig().model,
       apiKey: chatConfig.getApiKey(),
       temperature: 0.3, // Low temperature for consistent, concise output
       maxTokens: 50, // Short response for title only
       maxRetries: 1,
+      streaming: false, // Disable streaming
+      // model_kwargs: { thinking: undefined }, // Ensure thinking is disabled if supported
       ...(chatConfig.getBaseUrl() && {
         configuration: { baseURL: chatConfig.getBaseUrl() },
       }),
