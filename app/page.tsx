@@ -56,8 +56,8 @@ export default function ChatPage() {
   return (
     <>
       {/* Header */}
-      <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-border/50">
-        <div className="text-2xl font-bold">Reflecta</div>
+      <div className="shrink-0 flex items-center justify-between px-6 py-4 ">
+        <div />
         <div className="flex items-center gap-2">
           <Button
             variant={isTemporaryMode ? "default" : "ghost"}
