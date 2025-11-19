@@ -14,9 +14,9 @@ function createErrorResponse(message: string, status: number = 500): Response {
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { sessionId: string } }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
-  const { sessionId } = params;
+  const { sessionId } = await params;
 
   if (!sessionId) {
     return createErrorResponse("Session ID is required", 400);

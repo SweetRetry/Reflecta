@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { nanoid } from "nanoid";
 import {
@@ -14,7 +14,7 @@ import {
   type ChatSession
 } from "@/components/chat";
 
-export default function ChatPage() {
+function ChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -312,5 +312,13 @@ export default function ChatPage() {
         <ChatInput isLoading={isLoading} onSubmit={sendMessage} />
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+      <ChatPageContent />
+    </Suspense>
   );
 }
