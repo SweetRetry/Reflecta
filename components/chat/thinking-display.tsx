@@ -5,7 +5,6 @@ import {
   ChainOfThoughtHeader,
   ChainOfThoughtContent,
 } from "@/components/ai-elements/chain-of-thought";
-import { BrainIcon } from "lucide-react";
 
 interface ThinkingDisplayProps {
   thinking: string;
@@ -26,7 +25,6 @@ export function ThinkingDisplay({
       <ChainOfThought defaultOpen={shouldDefaultOpen}>
         <ChainOfThoughtHeader>
           <div className="flex items-center gap-2">
-            <BrainIcon className="w-4 h-4" />
             <span>{isStreaming ? "思考中..." : "思考过程"}</span>
             {isStreaming && (
               <div className="flex gap-1 ml-2">
