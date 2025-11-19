@@ -1,6 +1,6 @@
 "use client";
 
-import { Terminal, Sparkles, Plus } from "lucide-react";
+import { Terminal, Sparkles, Plus, Clock } from "lucide-react";
 import { Loader } from "@/components/ai-elements/loader";
 import {
   Sidebar,
@@ -21,16 +21,20 @@ interface ChatSidebarProps {
   sessions: ChatSession[];
   sessionsLoading: boolean;
   currentSessionId: string | null;
+  isTemporaryMode: boolean;
   onNewChat: () => void;
   onSelectSession: (sessionId: string) => void;
+  onToggleTemporaryMode: () => void;
 }
 
 export function ChatSidebar({
   sessions,
   sessionsLoading,
   currentSessionId,
+  isTemporaryMode,
   onNewChat,
   onSelectSession,
+  onToggleTemporaryMode,
 }: ChatSidebarProps) {
   return (
     <Sidebar>
@@ -52,20 +56,33 @@ export function ChatSidebar({
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupContent>
+          <SidebarGroupContent className="space-y-2">
             <Button
-              onClick={onNewChat}
+              onClick={onToggleTemporaryMode}
+              variant={isTemporaryMode ? "default" : "outline"}
               className="w-full justify-start"
               size="sm"
             >
-              <Plus className="w-4 h-4 mr-2" />
-              New Chat
+              <Clock className="w-4 h-4 mr-2" />
+              {isTemporaryMode ? "Temporary Mode" : "Persistent Mode"}
             </Button>
+
+            {!isTemporaryMode && (
+              <Button
+                onClick={onNewChat}
+                className="w-full justify-start"
+                size="sm"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Chat
+              </Button>
+            )}
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Chats</SidebarGroupLabel>
+        {!isTemporaryMode && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Chats</SidebarGroupLabel>
           <SidebarGroupContent>
             {sessionsLoading ? (
               <div className="flex items-center justify-center py-8">
@@ -107,6 +124,23 @@ export function ChatSidebar({
             )}
           </SidebarGroupContent>
         </SidebarGroup>
+        )}
+
+        {isTemporaryMode && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                <Clock className="w-8 h-8 mb-3 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Temporary mode active
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Messages won't be saved
+                </p>
+              </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );

@@ -22,6 +22,7 @@ export default function ChatPage() {
   const [streamingContent, setStreamingContent] = useState("");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [isTemporaryMode, setIsTemporaryMode] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -69,8 +70,27 @@ export default function ChatPage() {
     ]);
   };
 
+  const handleToggleTemporaryMode = () => {
+    const newMode = !isTemporaryMode;
+    setIsTemporaryMode(newMode);
+
+    // Clear messages when switching modes
+    setMessages([]);
+    setStreamingContent("");
+    setStreamingThinking("");
+
+    if (!newMode) {
+      // Exiting temporary mode, return to normal mode
+      // Load the current or create new session
+      if (!sessionId) {
+        handleNewChat();
+      }
+    }
+  };
+
   // Fetch sessions on mount
   useEffect(() => {
+    // Temporary mode is not persisted, always start in normal mode
     const fetchSessions = async () => {
       setSessionsLoading(true);
       try {
@@ -108,6 +128,8 @@ export default function ChatPage() {
 
   // Load chat history when sessionId changes
   useEffect(() => {
+    // Skip loading history in temporary mode
+    if (isTemporaryMode) return;
     if (!sessionId) return;
 
     // Reset state for new session
@@ -141,7 +163,7 @@ export default function ChatPage() {
     };
 
     loadHistory();
-  }, [sessionId]);
+  }, [sessionId, isTemporaryMode]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -169,15 +191,27 @@ export default function ChatPage() {
     setStreamingContent("");
 
     try {
-      const response = await fetch("/api/chat", {
+      // Use different endpoint and payload based on mode
+      const endpoint = isTemporaryMode ? "/api/chat/temporary" : "/api/chat";
+      const payload = isTemporaryMode
+        ? {
+            message: userInput,
+            history: messages.map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+            })),
+          }
+        : {
+            message: userInput,
+            sessionId: sessionId,
+          };
+
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          message: userInput,
-          sessionId: sessionId,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -225,22 +259,25 @@ export default function ChatPage() {
                   ]);
                   setStreamingContent("");
 
-                  // Optimistically update current session in sidebar
-                  setSessions((prev) =>
-                    prev.map((s) =>
-                      s.sessionId === sessionId
-                        ? {
-                            ...s,
-                            lastMessageTimestamp: Date.now(),
-                            messageCount: (s.messageCount || 0) + 2, // user + assistant
-                            title: s.title || userInput.substring(0, 100),
-                          }
-                        : s
-                    )
-                  );
+                  // Only update sessions in non-temporary mode
+                  if (!isTemporaryMode) {
+                    // Optimistically update current session in sidebar
+                    setSessions((prev) =>
+                      prev.map((s) =>
+                        s.sessionId === sessionId
+                          ? {
+                              ...s,
+                              lastMessageTimestamp: Date.now(),
+                              messageCount: (s.messageCount || 0) + 2, // user + assistant
+                              title: s.title || userInput.substring(0, 100),
+                            }
+                          : s
+                      )
+                    );
 
-                  // Refresh sessions to get accurate data from backend
-                  refreshSessions();
+                    // Refresh sessions to get accurate data from backend
+                    refreshSessions();
+                  }
 
                   continue;
                 }
@@ -289,8 +326,10 @@ export default function ChatPage() {
         sessions={sessions}
         sessionsLoading={sessionsLoading}
         currentSessionId={sessionId}
+        isTemporaryMode={isTemporaryMode}
         onNewChat={handleNewChat}
         onSelectSession={handleSelectSession}
+        onToggleTemporaryMode={handleToggleTemporaryMode}
       />
 
       <SidebarInset className="flex flex-col p-8 space-y-8">
