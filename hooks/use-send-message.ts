@@ -14,13 +14,12 @@ interface SendMessageOptions {
  * Custom hook to handle sending chat messages
  */
 export function useSendMessage(
+  currentSessionId: string | null,
   messages: ChatMessage[],
   options: SendMessageOptions = {}
 ) {
   const {
-    currentSessionId,
     isTemporaryMode,
-    setCurrentSessionId,
   } = useChatStore();
 
   const { addMessage } = useChatMessages(currentSessionId);
@@ -96,7 +95,6 @@ export function useSendMessage(
       let sessionId = currentSessionId;
       if (!isTemporaryMode && !sessionId) {
         sessionId = nanoid();
-        setCurrentSessionId(sessionId);
 
         if (options.onSessionCreated) {
           options.onSessionCreated(sessionId);
@@ -138,7 +136,6 @@ export function useSendMessage(
       isTemporaryMode,
       isStreaming,
       messages,
-      setCurrentSessionId,
       addMessage,
       processStream,
       options,

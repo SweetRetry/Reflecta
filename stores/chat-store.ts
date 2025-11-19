@@ -24,21 +24,16 @@ export interface ChatMessage {
  * Chat store state
  *
  * Design decisions:
- * - No persistence: URL is the single source of truth for currentSessionId
+ * - URL is the single source of truth for sessionId (not stored here)
  * - Transient state only: streaming content, temporary mode
- * - Store syncs with URL, but URL controls session navigation
  */
 interface ChatState {
-  // Session state (derived from URL, not persisted)
-  currentSessionId: string | null;
-  isTemporaryMode: boolean;
-
   // UI state (transient)
+  isTemporaryMode: boolean;
   streamingContent: string;
   streamingThinking: string;
 
   // Actions
-  setCurrentSessionId: (sessionId: string | null) => void;
   setIsTemporaryMode: (mode: boolean) => void;
   setStreamingContent: (content: string) => void;
   setStreamingThinking: (thinking: string) => void;
@@ -48,15 +43,11 @@ interface ChatState {
 
 export const useChatStore = create<ChatState>()((set) => ({
   // Initial state
-  currentSessionId: null,
   isTemporaryMode: false,
   streamingContent: "",
   streamingThinking: "",
 
   // Actions
-  setCurrentSessionId: (sessionId) =>
-    set({ currentSessionId: sessionId }),
-
   setIsTemporaryMode: (mode) =>
     set({ isTemporaryMode: mode }),
 
@@ -71,7 +62,6 @@ export const useChatStore = create<ChatState>()((set) => ({
 
   resetSession: () =>
     set({
-      currentSessionId: null,
       isTemporaryMode: false,
       streamingContent: "",
       streamingThinking: ""

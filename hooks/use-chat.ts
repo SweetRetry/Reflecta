@@ -18,10 +18,14 @@ interface MessagesResponse {
 /**
  * Custom hook to manage chat messages for a session
  */
-export function useChatMessages(sessionId: string | null) {
+export function useChatMessages(sessionId: string | null, enabled = true) {
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error } = useQuery<ChatMessage[]>({
+  const {
+    data,
+    isLoading,
+    error
+  } = useQuery<ChatMessage[]>({
     queryKey: MESSAGES_QUERY_KEY(sessionId),
     queryFn: async () => {
       if (!sessionId) return [];
@@ -39,7 +43,7 @@ export function useChatMessages(sessionId: string | null) {
         timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
       }));
     },
-    enabled: !!sessionId,
+    enabled: enabled && !!sessionId,
     staleTime: Infinity, // Messages don't change unless we mutate them
   });
 
@@ -58,14 +62,15 @@ export function useChatMessages(sessionId: string | null) {
       );
 
       if (previousMessages) {
-        queryClient.setQueryData<ChatMessage[]>(MESSAGES_QUERY_KEY(sessionId), [
-          ...previousMessages,
-          newMessage,
-        ]);
+        queryClient.setQueryData<ChatMessage[]>(
+          MESSAGES_QUERY_KEY(sessionId),
+          [...previousMessages, newMessage]
+        );
       } else {
-        queryClient.setQueryData<ChatMessage[]>(MESSAGES_QUERY_KEY(sessionId), [
-          newMessage,
-        ]);
+        queryClient.setQueryData<ChatMessage[]>(
+          MESSAGES_QUERY_KEY(sessionId),
+          [newMessage]
+        );
       }
 
       return { previousMessages };

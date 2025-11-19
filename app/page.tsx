@@ -14,9 +14,11 @@ import { useSendMessage } from "@/hooks/use-send-message";
 export default function ChatPage() {
   const router = useRouter();
 
+  // For the home page, sessionId is always null (new conversation)
+  const currentSessionId = null;
+
   // Zustand store
   const {
-    currentSessionId,
     isTemporaryMode,
     setIsTemporaryMode,
     clearStreaming,
@@ -27,7 +29,7 @@ export default function ChatPage() {
   const { messages, clearMessages } = useChatMessages(currentSessionId);
 
   // Streaming and sending
-  const { sendMessage, isLoading } = useSendMessage(messages, {
+  const { sendMessage, isLoading } = useSendMessage(currentSessionId, messages, {
     onSessionCreated: (sessionId) => {
       router.push(`/session/${sessionId}`);
     },
@@ -39,7 +41,7 @@ export default function ChatPage() {
     clearMessages();
     clearStreaming();
 
-    if (!newMode && !currentSessionId) {
+    if (!newMode) {
       router.push("/", { scroll: false });
       resetSession();
       clearMessages();

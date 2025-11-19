@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { ChatSidebar } from "./chat-sidebar";
 
@@ -11,9 +11,13 @@ import { useChatMessages } from "@/hooks/use-chat";
 
 export function ChatLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const params = useParams();
+
+  // Get currentSessionId from URL params (single source of truth)
+  const currentSessionId = (params.sessionId as string) || null;
 
   // Zustand store
-  const { currentSessionId, isTemporaryMode, resetSession } = useChatStore();
+  const { isTemporaryMode, resetSession } = useChatStore();
 
   // React Query hooks
   const { sessions, isLoading: sessionsLoading } = useSessions();

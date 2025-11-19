@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { ChatMessages, ChatInput, ChatMessagesRef } from "@/components/chat";
 
 // Custom hooks
@@ -12,12 +12,14 @@ import { useSendMessage } from "@/hooks/use-send-message";
 
 export default function SessionPage() {
   const router = useRouter();
-
+  const params = useParams();
   const chatMessagesRef = useRef<ChatMessagesRef>(null);
+
+  // Get sessionId from URL params (single source of truth)
+  const currentSessionId = params.sessionId as string;
 
   // Zustand store
   const {
-    currentSessionId,
     isTemporaryMode,
     streamingContent,
     streamingThinking,
@@ -28,7 +30,7 @@ export default function SessionPage() {
   const { messages } = useChatMessages(currentSessionId, !isTemporaryMode);
 
   // Streaming and sending
-  const { sendMessage, isLoading } = useSendMessage(messages, {
+  const { sendMessage, isLoading } = useSendMessage(currentSessionId, messages, {
     onSessionCreated: (newSessionId) => {
       router.push(`/session/${newSessionId}`);
     },
