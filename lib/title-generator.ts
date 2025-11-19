@@ -44,7 +44,21 @@ Requirements:
 Title:`;
 
     const response = await model.invoke(prompt);
-    const title = response.content.toString().trim();
+    
+    let titleText = "";
+    if (typeof response.content === "string") {
+      titleText = response.content;
+    } else if (Array.isArray(response.content)) {
+      titleText = response.content
+        .map((block) => {
+          if (typeof block === "string") return block;
+          if (block.type === "text") return block.text;
+          return "";
+        })
+        .join("");
+    }
+    
+    const title = titleText.trim();
 
     // Clean up the title (remove quotes, trailing punctuation)
     const cleanedTitle = title
