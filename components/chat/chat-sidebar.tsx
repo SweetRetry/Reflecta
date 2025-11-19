@@ -1,7 +1,7 @@
 "use client";
 
 import { Terminal, Sparkles, Plus } from "lucide-react";
-import { Loader } from "@/components/ai-elements/loader";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
   SidebarContent,
@@ -69,9 +69,16 @@ export function ChatSidebar({
           <SidebarGroupLabel className="text-muted-foreground">对话历史</SidebarGroupLabel>
           <SidebarGroupContent>
             {sessionsLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader size={24} />
-              </div>
+              <SidebarMenu className="space-y-1">
+                {[1, 2, 3].map((i) => (
+                  <SidebarMenuItem key={i}>
+                    <div className="px-3 py-3 rounded-xl">
+                      <Skeleton className="h-4 w-full mb-2" />
+                      <Skeleton className="h-3 w-2/3" />
+                    </div>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
             ) : sessions.length > 0 ? (
               <SidebarMenu className="space-y-1">
                 {sessions.map((session) => (
