@@ -1,354 +1,151 @@
 "use client";
 
-import { useState, useRef, useEffect, Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { nanoid } from "nanoid";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
-  SidebarProvider,
-  SidebarInset,
-} from "@/components/ui/sidebar";
-import {
-  ChatSidebar, ChatMessages,
+  ChatSidebar,
+  ChatMessages,
   ChatInput,
-  type ChatMessage,
-  type ChatSession
 } from "@/components/chat";
+
+// Custom hooks
+import { useChatStore } from "@/stores/chat-store";
+import { useSessions } from "@/hooks/use-sessions";
+import { useChatMessages } from "@/hooks/use-chat";
+import { useSendMessage } from "@/hooks/use-send-message";
 
 function ChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [streamingThinking, setStreamingThinking] = useState("");
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [isTemporaryMode, setIsTemporaryMode] = useState(false);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // Zustand store
+  const {
+    currentSessionId,
+    isTemporaryMode,
+    streamingContent,
+    streamingThinking,
+    setCurrentSessionId,
+    setIsTemporaryMode,
+    clearStreaming,
+    resetSession,
+  } = useChatStore();
 
-  // Get sessionId from URL query params
-  const sessionId = searchParams.get("sessionId");
+  // React Query hooks
+  const { sessions, isLoading: sessionsLoading } = useSessions();
+  const { messages, clearMessages } = useChatMessages(
+    currentSessionId,
+    !isTemporaryMode
+  );
 
-  // Refresh sessions function
-  const refreshSessions = async () => {
-    setSessionsLoading(true);
-    try {
-      const response = await fetch("/api/sessions");
-      if (response.ok) {
-        const data = await response.json();
-        setSessions(data.sessions || []);
-      }
-    } catch (error) {
-      console.error("Failed to refresh sessions:", error);
-    } finally {
-      setSessionsLoading(false);
+  // Streaming and sending
+  const { sendMessage, isLoading } = useSendMessage(messages, {
+    onSessionCreated: (sessionId) => {
+      router.push(`?sessionId=${sessionId}`, { scroll: false });
+    },
+  });
+
+  // Get sessionId from URL
+  const urlSessionId = searchParams.get("sessionId");
+
+  // Sync URL sessionId with store (URL is the source of truth)
+  useEffect(() => {
+    if (urlSessionId && urlSessionId !== currentSessionId) {
+      setCurrentSessionId(urlSessionId);
     }
-  };
+  }, [urlSessionId, currentSessionId, setCurrentSessionId]);
 
-  // Update URL when sessionId changes
-  const updateSessionIdInUrl = (newSessionId: string | null) => {
-    if (newSessionId) {
-      router.push(`?sessionId=${newSessionId}`, { scroll: false });
-    } else {
-      router.push("/", { scroll: false });
+  // Initialize to first session if no URL sessionId
+  useEffect(() => {
+    if (!urlSessionId && !isTemporaryMode && sessions.length > 0) {
+      // Navigate to the most recent session (first in list)
+      router.push(`?sessionId=${sessions[0].sessionId}`, { scroll: false });
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions.length, isTemporaryMode]);
 
   const handleNewChat = () => {
-    const newSessionId = nanoid();
-    updateSessionIdInUrl(newSessionId);
-    localStorage.setItem("chat_session_id", newSessionId);
-    // Optimistically add new session to top of list
-    setSessions((prev) => [
-      {
-        sessionId: newSessionId,
-        title: null,
-        lastMessageTimestamp: Date.now(),
-        messageCount: 0,
-      },
-      ...prev,
-    ]);
+    router.push("/", { scroll: false });
+    resetSession();
+    clearMessages();
   };
 
   const handleToggleTemporaryMode = () => {
     const newMode = !isTemporaryMode;
     setIsTemporaryMode(newMode);
+    clearMessages();
+    clearStreaming();
 
-    // Clear messages when switching modes
-    setMessages([]);
-    setStreamingContent("");
-    setStreamingThinking("");
-
-    if (!newMode) {
-      // Exiting temporary mode, return to normal mode
-      // Load the current or create new session
-      if (!sessionId) {
-        handleNewChat();
-      }
+    if (!newMode && !currentSessionId) {
+      handleNewChat();
     }
   };
-
-  // Fetch sessions on mount
-  useEffect(() => {
-    // Temporary mode is not persisted, always start in normal mode
-    const fetchSessions = async () => {
-      setSessionsLoading(true);
-      try {
-        const response = await fetch("/api/sessions");
-        if (response.ok) {
-          const data = await response.json();
-          setSessions(data.sessions || []);
-
-          // Initialize sessionId from URL or fallback to stored/default
-          if (!sessionId) {
-            const storedSessionId = localStorage.getItem("chat_session_id");
-            if (
-              storedSessionId &&
-              data.sessions.some(
-                (s: ChatSession) => s.sessionId === storedSessionId
-              )
-            ) {
-              updateSessionIdInUrl(storedSessionId);
-            } else if (data.sessions.length > 0) {
-              updateSessionIdInUrl(data.sessions[0].sessionId);
-            } else {
-              handleNewChat();
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Failed to fetch sessions:", error);
-      } finally {
-        setSessionsLoading(false);
-      }
-    };
-    fetchSessions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Load chat history when sessionId changes
-  useEffect(() => {
-    // Skip loading history in temporary mode
-    if (isTemporaryMode) return;
-    if (!sessionId) return;
-
-    // Reset state for new session
-    setMessages([]);
-    setStreamingContent("");
-    setStreamingThinking("");
-    setIsLoading(false);
-
-    const loadHistory = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch(`/api/sessions/${sessionId}/messages`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        if (data.messages && Array.isArray(data.messages)) {
-          const historyMessages: ChatMessage[] = data.messages.map(
-            (msg: { role: string; content: string; timestamp?: number }) => ({
-              role: msg.role as "user" | "assistant",
-              content: msg.content,
-              timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
-            })
-          );
-          setMessages(historyMessages);
-        }
-      } catch (error) {
-        console.error("Error loading history:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadHistory();
-  }, [sessionId, isTemporaryMode]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, streamingContent]);
 
   const handleSelectSession = (selectedSessionId: string) => {
-    updateSessionIdInUrl(selectedSessionId);
-    localStorage.setItem("chat_session_id", selectedSessionId);
+    router.push(`?sessionId=${selectedSessionId}`, { scroll: false });
+    setCurrentSessionId(selectedSessionId);
   };
 
-  const sendMessage = async (messageData: { text: string }) => {
-    const userInput = messageData.text;
-    if (!userInput.trim() || isLoading) return;
-
-    const userMessage: ChatMessage = {
-      role: "user",
-      content: userInput,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-    setStreamingContent("");
-    setStreamingThinking("");
-
-    try {
-      // Use different endpoint and payload based on mode
-      const endpoint = isTemporaryMode ? "/api/chat/temporary" : "/api/chat";
-      const payload = isTemporaryMode
-        ? {
-            message: userInput,
-            history: messages.map((msg) => ({
-              role: msg.role,
-              content: msg.content,
-            })),
-          }
-        : {
-            message: userInput,
-            sessionId: sessionId,
-          };
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedContent = "";
-      let buffer = ""; // Buffer for incomplete SSE events
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          // Decode chunk and add to buffer
-          const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
-
-          // Split by double newline (SSE event separator)
-          const events = buffer.split("\n\n");
-
-          // Keep the last incomplete event in buffer
-          buffer = events.pop() || "";
-
-          // Process complete events
-          for (const event of events) {
-            if (!event.trim()) continue;
-
-            const lines = event.split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                const data = line.slice(6).trim();
-
-                // Handle completion marker
-                if (data === "[DONE]") {
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: "assistant",
-                      content: accumulatedContent,
-                      timestamp: new Date(),
-                      thinking: streamingThinking || undefined,
-                    },
-                  ]);
-                  setStreamingContent("");
-                  setStreamingThinking("");
-
-                  // Only update sessions in non-temporary mode
-                  if (!isTemporaryMode) {
-                    // Optimistically update current session in sidebar
-                    setSessions((prev) =>
-                      prev.map((s) =>
-                        s.sessionId === sessionId
-                          ? {
-                              ...s,
-                              lastMessageTimestamp: Date.now(),
-                              messageCount: (s.messageCount || 0) + 2, // user + assistant
-                              title: s.title || userInput.substring(0, 100),
-                            }
-                          : s
-                      )
-                    );
-
-                    // Refresh sessions to get accurate data from backend
-                    refreshSessions();
-                  }
-
-                  continue;
-                }
-
-                // Parse JSON data
-                try {
-                  const parsed = JSON.parse(data);
-                  if (parsed.thinking) {
-                    setStreamingThinking(parsed.thinking);
-                  }
-                  if (parsed.content) {
-                    accumulatedContent += parsed.content;
-                    setStreamingContent(accumulatedContent);
-                  }
-                  if (parsed.error) {
-                    throw new Error(parsed.error);
-                  }
-                } catch (e) {
-                  if (
-                    e instanceof Error &&
-                    e.message !== "Unexpected end of JSON input"
-                  ) {
-                    console.error("Parse error:", e, "Raw data:", data);
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, an error occurred. Please try again.",
-          timestamp: new Date(),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+  const handleSubmit = async (messageData: { text: string }) => {
+    await sendMessage(messageData.text);
   };
+
+  // Get current session title
+  const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
+  const currentTitle = isTemporaryMode
+    ? "临时对话"
+    : currentSession?.title || "新对话";
 
   return (
     <SidebarProvider>
       <ChatSidebar
         sessions={sessions}
         sessionsLoading={sessionsLoading}
-        currentSessionId={sessionId}
+        currentSessionId={currentSessionId}
         isTemporaryMode={isTemporaryMode}
         onNewChat={handleNewChat}
         onSelectSession={handleSelectSession}
-        onToggleTemporaryMode={handleToggleTemporaryMode}
       />
 
-      <SidebarInset className="flex flex-col p-8 space-y-8">
-        <ChatMessages
-          messages={messages}
-          isLoading={isLoading}
-          streamingContent={streamingContent}
-          streamingThinking={streamingThinking}
-        />
+      <SidebarInset
+        className={`flex flex-col h-screen overflow-hidden transition-all duration-300 ${
+          isTemporaryMode ? "bg-muted/20" : ""
+        }`}
+      >
+        {/* Header */}
+        <div className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-border/50">
+          <h2 className="text-lg font-medium truncate">{currentTitle}</h2>
+          <div className="flex items-center gap-2">
+            {(!currentSessionId || isTemporaryMode) && (
+              <Button
+                variant={isTemporaryMode ? "default" : "ghost"}
+                size="icon"
+                onClick={handleToggleTemporaryMode}
+                className="rounded-xl transition-all duration-200"
+                title={isTemporaryMode ? "切换到持久对话" : "切换到临时对话"}
+              >
+                <Clock className="w-5 h-5" />
+              </Button>
+            )}
+          </div>
+        </div>
 
-        <ChatInput isLoading={isLoading} onSubmit={sendMessage} />
+        {/* Messages */}
+        <div className="flex-1 flex flex-col min-h-0 px-6">
+          <ChatMessages
+            messages={messages}
+            isLoading={isLoading}
+            streamingContent={streamingContent}
+            streamingThinking={streamingThinking}
+          />
+        </div>
+
+        {/* Input */}
+        <div className="shrink-0 bg-background w-3xl mx-auto px-6 pb-6">
+          <ChatInput isLoading={isLoading} onSubmit={handleSubmit} />
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );
@@ -356,7 +153,13 @@ function ChatPageContent() {
 
 export default function ChatPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-screen">
+          Loading...
+        </div>
+      }
+    >
       <ChatPageContent />
     </Suspense>
   );
