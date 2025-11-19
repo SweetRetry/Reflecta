@@ -98,8 +98,8 @@ export function useStreamingResponse(options: StreamingOptions = {}) {
                   const parsed = JSON.parse(data);
 
                   if (parsed.thinking) {
-                    accumulatedThinking = parsed.thinking;
-                    setStreamingThinking(parsed.thinking);
+                    accumulatedThinking += parsed.thinking;
+                    setStreamingThinking(accumulatedThinking);
                   }
 
                   if (parsed.content) {
