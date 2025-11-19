@@ -152,13 +152,13 @@ export async function POST(req: NextRequest) {
                   } else if (Array.isArray(chunk.content)) {
                     // Handle complex content (e.g. thinking blocks)
                     for (const block of chunk.content) {
-                      if (block.type === "text") {
+                      if (block.type === "text" && block.text !== undefined) {
                         finalResponse += block.text;
                         const sseChunk = JSON.stringify({
                           content: block.text,
                         });
                         controller.enqueue(encoder.encode(`data: ${sseChunk}\n\n`));
-                      } else if (block.type === "thinking") {
+                      } else if (block.type === "thinking" && block.thinking !== undefined) {
                         thinking += block.thinking;
                         const sseChunk = JSON.stringify({
                           thinking: block.thinking,
