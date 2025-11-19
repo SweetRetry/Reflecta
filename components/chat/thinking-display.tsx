@@ -26,13 +26,6 @@ export function ThinkingDisplay({
         <ChainOfThoughtHeader>
           <div className="flex items-center gap-2">
             <span>{isStreaming ? "思考中..." : "思考过程"}</span>
-            {isStreaming && (
-              <div className="flex gap-1 ml-2">
-                <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
-                <div className="w-1 h-1 rounded-full bg-primary animate-pulse [animation-delay:150ms]" />
-                <div className="w-1 h-1 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
-              </div>
-            )}
           </div>
         </ChainOfThoughtHeader>
         <ChainOfThoughtContent>

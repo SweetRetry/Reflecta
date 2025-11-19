@@ -21,7 +21,7 @@ import { getRateLimiter, RateLimiter } from "@/lib/rate-limiter";
 import { MetricsCollector } from "@/lib/chat-metrics";
 import { processMemoryInBackground } from "@/lib/chat-memory";
 import { countMessagesTokens } from "@/lib/token-manager";
-import { createChatAgentGraph } from "@/lib/agents/chat-agent-graph";
+import { createChatAgentGraph, determineUserIntent } from "@/lib/agents/chat-agent-graph";
 import { getMemoryForSession } from "@/lib/chat-memory";
 import { searchRelevantContextEnhanced } from "@/lib/memory/memory-rag-enhanced";
 import { isNewSession, updateSessionTitle } from "@/lib/memory/memory-storage";
@@ -96,19 +96,28 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
+          // Send initial status to improve perceived performance
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "status-update", status: "analyzing" })}\n\n`));
+
           // Parallel database queries for optimal performance moved INSIDE stream
           // This ensures TTFB (Time to First Byte) is instant, while data loading happens
           // - history: limited to last 10 messages (reduces memory and improves performance)
           // - isNew: check if session is new (for title generation)
           // - contextMessages: RAG-based context search (only if enabled)
+          // - toolCall: Parallelized intent determination (Planning)
           const embeddingConfig = chatConfig.getEmbeddingConfig();
-          const [history, isNew, contextMessages] = await Promise.all([
+          const [history, isNew, contextMessages, toolCall] = await Promise.all([
             getMemoryForSession(chatRequest.sessionId!, 10), // Limit to last 10 messages
             isNewSession(chatRequest.sessionId!),
             embeddingConfig.enabled && embeddingConfig.enableRag
               ? searchRelevantContextEnhanced(chatRequest.sessionId!, chatRequest.message)
               : Promise.resolve([]),
+            // Parallelize intent determination with RAG
+            determineUserIntent(chatRequest.message)
           ]);
+
+          // Update status before generation
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "status-update", status: "generating" })}\n\n`));
 
           const agentGraph = createChatAgentGraph();
           
@@ -119,6 +128,7 @@ export async function POST(req: NextRequest) {
               currentMessage: chatRequest.message,
               messages: history, // Already limited to 10 messages in query
               contextMessages,
+              toolCall, // Inject the pre-calculated plan
             },
             {
               version: "v2",

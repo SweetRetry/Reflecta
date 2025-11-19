@@ -24,10 +24,7 @@ export default function ChatPage() {
   } = useChatStore();
 
   // React Query hooks
-  const { messages, clearMessages } = useChatMessages(
-    currentSessionId,
-    !isTemporaryMode
-  );
+  const { messages, clearMessages } = useChatMessages(currentSessionId);
 
   // Streaming and sending
   const { sendMessage, isLoading } = useSendMessage(messages, {

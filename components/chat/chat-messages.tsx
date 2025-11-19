@@ -1,5 +1,6 @@
 "use client";
 
+import { forwardRef, useImperativeHandle } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -16,6 +17,7 @@ import { Sparkles } from "lucide-react";
 import { ChatMessage } from "./types";
 import { motion, AnimatePresence } from "framer-motion";
 import { ThinkingDisplay } from "./thinking-display";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 
 interface ChatMessagesProps {
   messages: ChatMessage[];
@@ -24,15 +26,29 @@ interface ChatMessagesProps {
   streamingThinking?: string;
 }
 
-export function ChatMessages({
-  messages,
-  isLoading,
-  streamingContent,
-  streamingThinking,
-}: ChatMessagesProps) {
-  return (
-    <Conversation className="flex-1 py-8">
-      <ConversationContent>
+export interface ChatMessagesRef {
+  scrollToBottom: () => void;
+}
+
+function ScrollManager({ ref }: { ref: React.Ref<ChatMessagesRef> }) {
+  const { scrollToBottom } = useStickToBottomContext();
+
+  useImperativeHandle(ref, () => ({
+    scrollToBottom,
+  }));
+
+  return null;
+}
+
+export const ChatMessages = forwardRef<ChatMessagesRef, ChatMessagesProps>(
+  function ChatMessages(
+    { messages, isLoading, streamingContent, streamingThinking },
+    ref
+  ) {
+    return (
+      <Conversation className="flex-1 py-8">
+        <ConversationContent>
+          <ScrollManager ref={ref} />
         {isLoading && messages.length === 0 && (
           <div className="flex items-center justify-center h-full animate-in fade-in duration-300">
             <Loader size={32} />
@@ -84,7 +100,7 @@ export function ChatMessages({
                       />
                     )}
                     {message.role === "user" ? (
-                      <div className="whitespace-pre-wrap break-words">
+                      <div className="whitespace-pre-wrap wrap-break-word">
                         {message.content}
                       </div>
                     ) : (
@@ -154,4 +170,4 @@ export function ChatMessages({
       <ConversationScrollButton />
     </Conversation>
   );
-}
+});

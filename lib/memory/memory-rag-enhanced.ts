@@ -210,14 +210,19 @@ async function searchMemories(
 
 /**
  * Compresses context by extracting only relevant information using a lightweight LLM
+ * Only runs if the total content length exceeds a threshold to avoid unnecessary latency
  */
 async function compressContext(query: string, docs: BaseMessage[]): Promise<BaseMessage[]> {
-  // If few documents, skip compression to save latency
-  if (docs.length < 2) {
+  // Calculate approximate token count (1 token ~= 4 chars)
+  const totalChars = docs.reduce((acc, doc) => acc + doc.content.length, 0);
+  
+  // Skip compression if content is reasonable size (e.g., < 8000 chars ~= 2000 tokens)
+  // Modern LLMs handle this context size easily, so latency of compression outweighs the benefit
+  if (totalChars < 8000) {
     return docs;
   }
 
-  console.log(`[Context Compression] Compressing ${docs.length} documents...`);
+  console.log(`[Context Compression] Triggered. Total length: ${totalChars} chars`);
 
   try {
     const config = chatConfig.getModelConfig();

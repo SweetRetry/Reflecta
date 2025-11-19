@@ -85,15 +85,10 @@ function getModelInstance(temperature: number = 0.7, streaming: boolean = false)
 
 // --- Node 1: Plan Task ---
 /**
- * Analyzes the user's message to determine if tools are needed
- * Uses structured output for reliable JSON parsing
+ * Externalized planning logic for parallel execution
  */
-async function planTask(state: ChatAgentState): Promise<Partial<ChatAgentState>> {
-  console.log("--- Chat Agent: Planning Task ---");
-  const { currentMessage } = state;
-
+export async function determineUserIntent(message: string): Promise<ToolCall> {
   const model = getModelInstance(0.3); // Low temperature for planning
-
   const searchAvailable = isSearchAvailable();
 
   const systemPrompt = `You are a task routing agent. Analyze the user's message and choose the appropriate tool.
@@ -116,7 +111,6 @@ ${searchAvailable ? "" : "- Since search is unavailable, use \"none\" for search
 
 Default to "none" if uncertain.`;
 
-
   try {
     const modelWithStructure = model.withStructuredOutput(TaskPlanSchema, {
       name: "plan_task",
@@ -125,47 +119,46 @@ Default to "none" if uncertain.`;
 
     const result = await modelWithStructure.invoke([
       new SystemMessage(systemPrompt),
-      new HumanMessage(`User message: "${currentMessage}"\n\nAnalyze and choose the appropriate tool.`),
+      new HumanMessage(`User message: "${message}"\n\nAnalyze and choose the appropriate tool.`),
     ]);
 
     // Validate result
     if (!result || !result.toolType) {
-      console.warn("Invalid task plan result, using fallback");
-      return {
-        toolCall: {
-          tool: "none",
-        },
-      };
+      return { tool: "none" };
     }
 
-    console.log(`✓ Task Plan: ${result.toolType}${result.toolQuery ? ` (query: ${result.toolQuery.substring(0, 50)}...)` : ""}`);
-
     return {
-      toolCall: {
-        tool: result.toolType,
-        query: result.toolQuery,
-      },
+      tool: result.toolType,
+      query: result.toolQuery,
     };
   } catch (error) {
-    // Enhanced error logging for debugging
-    console.error("⚠️ Error planning task:", error);
-    if (error instanceof Error) {
-      console.error("Error details:", {
-        name: error.name,
-        message: error.message,
-        // Log additional context if available
-        ...(error as any).llmOutput && { llmOutput: (error as any).llmOutput },
-      });
-    }
-
-    // Fallback: no tool (safe default)
-    console.log("→ Falling back to direct response (no tool)");
-    return {
-      toolCall: {
-        tool: "none",
-      },
-    };
+    console.error("Error determining intent:", error);
+    return { tool: "none" };
   }
+}
+
+/**
+ * Analyzes the user's message to determine if tools are needed
+ * Uses structured output for reliable JSON parsing
+ */
+async function planTask(state: ChatAgentState): Promise<Partial<ChatAgentState>> {
+  console.log("--- Chat Agent: Planning Task ---");
+  
+  // Optimization: If toolCall is already provided (e.g. pre-calculated in parallel), skip planning
+  if (state.toolCall) {
+     console.log(`Using pre-calculated plan: ${state.toolCall.tool}`);
+     return {}; // No changes, keep existing toolCall
+  }
+
+  // Fallback to internal planning if not provided
+  const { currentMessage } = state;
+  const toolCall = await determineUserIntent(currentMessage);
+  
+  console.log(`✓ Task Plan (Fallback): ${toolCall.tool}${toolCall.query ? ` (query: ${toolCall.query.substring(0, 50)}...)` : ""}`);
+
+  return {
+    toolCall
+  };
 }
 
 // --- Node 2: Execute Web Search ---
